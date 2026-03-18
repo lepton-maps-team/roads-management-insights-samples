@@ -70,10 +70,13 @@ global_validation_checker = None
 async def lifespan(app: FastAPI):
     """Lifespan handler for startup and shutdown"""
     global global_validation_checker
+    
+    # Startup
     # Ensure database schema exists (same DB path as request handlers; safe on every startup)
     init_db()
     # Initialize Firebase Admin SDK for route metrics logging
     initialize_firebase()
+    
     # Start global validation checker (checks all projects, runs every 20 seconds)
     logging.info("Starting global validation checker (runs every 20 seconds for all projects)")
     global_validation_checker = RouteStatusChecker(project_number=None)
