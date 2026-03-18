@@ -135,12 +135,6 @@ const MapTypeController: React.FC = () => {
       const googleMap = map as unknown as google.maps.Map
       if (googleMap && typeof googleMap.setMapTypeId === "function") {
         googleMap.setMapTypeId(mapType as google.maps.MapTypeId)
-
-        // Force deck.gl overlay to refresh when map type changes
-        setTimeout(() => {
-          // Trigger a map refresh to prevent WebGL conflicts
-          googleMap.setCenter(googleMap.getCenter());
-        }, 50);
       }
     } catch (error) {
       console.warn("Failed to set map type:", error)
