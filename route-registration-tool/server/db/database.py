@@ -2,85 +2,82 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 
-import aiosqlite
 import asyncio
 import logging
-import os
 from contextlib import asynccontextmanager
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+
+from server.db.config import get_database_path, get_database_urls
+from server.db.sql_params import prepare_text
 
 logger = logging.getLogger(__name__)
 
-# Use path relative to project root (route-registration-tool) so same DB is used regardless of cwd
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB = os.path.join(_PROJECT_ROOT, "my_database.db")
+_async_url, _ = get_database_urls()
+async_engine = create_async_engine(_async_url, pool_pre_ping=True)
+
+# Legacy: path to SQLite file when using default SQLite URL (see server.db.config)
+DB = get_database_path()
+
 
 @asynccontextmanager
 async def get_db_transaction():
-    """Get a database connection with transaction support"""
-    conn = None
-    try:
-        conn = await aiosqlite.connect(DB)
-        conn.row_factory = aiosqlite.Row
-        try:
+    """Async connection with an open transaction (commit/rollback on exit)."""
+    async with async_engine.connect() as conn:
+        async with conn.begin():
             yield conn
-            await conn.commit()
-        except Exception as e:
-            if conn:
-                try:
-                    await conn.rollback()
-                except (RuntimeError, asyncio.CancelledError):
-                    # Event loop is closed, ignore rollback errors during shutdown
-                    pass
-            raise
-    finally:
-        if conn:
-            try:
-                await conn.close()
-            except (RuntimeError, asyncio.CancelledError):
-                # Event loop is closed, ignore close errors during shutdown
-                pass
+
 
 async def query_db(query, args=(), one=False, commit=False, conn=None):
-    """Async helper to run queries against SQLite"""
+    """Run SQL via SQLAlchemy async; tuple/list args use ``?`` → named binds."""
     try:
-        if conn:
-            # Use existing connection (within transaction)
-            async with conn.execute(query, args) as cur:
-                if commit:
-                    return cur.lastrowid
-                rows = await cur.fetchall()
-                return (rows[0] if rows else None) if one else rows
+        if isinstance(args, dict):
+            stmt = text(query)
+            bind_params = args
         else:
-            # Create new connection
-            async with aiosqlite.connect(DB) as conn:
-                conn.row_factory = aiosqlite.Row
-                async with conn.execute(query, args) as cur:
-                    if commit:
-                        await conn.commit()
-                        return cur.lastrowid
-                    rows = await cur.fetchall()
-                    return (rows[0] if rows else None) if one else rows
+            q, bind_params = prepare_text(query, args)
+            stmt = text(q)
+
+        async def _execute(c: AsyncConnection):
+            result = await c.execute(stmt, bind_params)
+            if commit:
+                lr = getattr(result, "lastrowid", None)
+                if lr is not None:
+                    return lr
+                ipk = result.inserted_primary_key
+                if ipk is not None and len(ipk) == 1 and ipk[0] is not None:
+                    return ipk[0]
+                return None
+            rows = result.fetchall()
+            if one:
+                return rows[0] if rows else None
+            return list(rows)
+
+        if conn is not None:
+            return await _execute(conn)
+
+        if commit:
+            async with async_engine.begin() as c:
+                return await _execute(c)
+
+        async with async_engine.connect() as c:
+            return await _execute(c)
+
     except (RuntimeError, asyncio.CancelledError) as e:
-        # Event loop is closed or cancelled - this happens during shutdown
-        # Log but don't raise to avoid noise in logs
-        if "Event loop is closed" not in str(e) and "CancelledError" not in str(type(e).__name__):
+        if "Event loop is closed" not in str(e) and "CancelledError" not in str(
+            type(e).__name__
+        ):
             logger.warning(f"Database query error during shutdown: {e}")
-        # Return appropriate default values
         if one:
             return None
         return []
     except Exception as e:
-        # Re-raise other exceptions
         logger.error(f"Database query error: {e}")
         raise
+
+
+async def dispose_async_engine() -> None:
+    await async_engine.dispose()

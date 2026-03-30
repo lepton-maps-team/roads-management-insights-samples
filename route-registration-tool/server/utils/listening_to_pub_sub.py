@@ -22,6 +22,7 @@ from google.cloud import pubsub_v1
 from dotenv import load_dotenv
 from shapely.geometry import LineString
 from .create_engine import engine
+from server.db.sql_params import prepare_text
 from sqlalchemy import text
 from sqlalchemy.orm import scoped_session, sessionmaker
 import threading
@@ -98,7 +99,9 @@ def listen_to_pubsub(gcp_project_id, project_db_id, stop_event, gcp_project_numb
     # -------------------------------
     Session = scoped_session(sessionmaker(bind=engine))
     with engine.begin() as conn:
-        conn.execute(text(""" 
+        if conn.dialect.name == "sqlite":
+            conn.execute(
+                text("""
         CREATE TABLE IF NOT EXISTS routes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uuid TEXT NOT NULL,
@@ -139,7 +142,8 @@ def listen_to_pubsub(gcp_project_id, project_db_id, stop_event, gcp_project_numb
             synced_at DATETIME,
             FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
         );
-        """))
+        """)
+            )
 
     logging.info("Database ready")
 
@@ -203,9 +207,7 @@ def listen_to_pubsub(gcp_project_id, project_db_id, stop_event, gcp_project_numb
                             else:
                                 insert_records.append(record_data)
 
-                        conn = session.connection()
-                        raw_conn = conn.connection.dbapi_connection
-                        cursor = raw_conn.cursor()
+                        sync_conn = session.connection()
 
                         if update_records:
                             update_stmt = """
@@ -216,24 +218,26 @@ def listen_to_pubsub(gcp_project_id, project_db_id, stop_event, gcp_project_numb
                                     temp_geometry = ?
                                 WHERE uuid = ?
                             """
-                            cursor.executemany(
-                                update_stmt,
-                                [
+                            for r in update_records:
+                                q, bind = prepare_text(
+                                    update_stmt,
                                     (
                                         r["latest_data_update_time"],
                                         r["static_duration_seconds"],
                                         r["current_duration_seconds"],
                                         r["temp_geometry"],
-                                        r["uuid"]
-                                    )
-                                    for r in update_records
-                                ]
-                            )
+                                        r["uuid"],
+                                    ),
+                                )
+                                sync_conn.execute(text(q), bind)
 
                         if insert_records:
                             project_id_for_uuid = insert_records[0]["project_id"]
-                            cursor.execute("SELECT project_uuid FROM projects WHERE id = ? AND deleted_at IS NULL", (project_id_for_uuid,))
-                            pu_row = cursor.fetchone()
+                            q_sel, bind_sel = prepare_text(
+                                "SELECT project_uuid FROM projects WHERE id = ? AND deleted_at IS NULL",
+                                (project_id_for_uuid,),
+                            )
+                            pu_row = sync_conn.execute(text(q_sel), bind_sel).fetchone()
                             project_uuid_val = pu_row[0] if pu_row and pu_row[0] else None
                             insert_stmt = """
                                 INSERT INTO routes (
@@ -247,24 +251,47 @@ def listen_to_pubsub(gcp_project_id, project_db_id, stop_event, gcp_project_numb
                                     routes_status, synced_at
                                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """
-                            cursor.executemany(
-                                insert_stmt,
-                                [
-                                    (
-                                        r["uuid"], r["project_id"], project_uuid_val, r["route_name"], r["origin"], r["destination"], r["waypoints"],
-                                        r["center"], r["encoded_polyline"], r["route_type"], r["length"],
-                                        r["parent_route_id"], r["has_children"], r["is_segmented"], r["segmentation_type"], r["segmentation_points"], r["segmentation_config"],
-                                        r["sync_status"], r["is_enabled"], r["deleted_at"], r["tag"], r["temp_geometry"],
-                                        r["start_lat"], r["start_lng"], r["end_lat"], r["end_lng"],
-                                        r["min_lat"], r["max_lat"], r["min_lng"], r["max_lng"],
-                                        r["latest_data_update_time"], r["static_duration_seconds"], r["current_duration_seconds"],
-                                        r["routes_status"], r["synced_at"]
-                                    )
-                                    for r in insert_records
-                                ]
-                            )
+                            for r in insert_records:
+                                tup = (
+                                    r["uuid"],
+                                    r["project_id"],
+                                    project_uuid_val,
+                                    r["route_name"],
+                                    r["origin"],
+                                    r["destination"],
+                                    r["waypoints"],
+                                    r["center"],
+                                    r["encoded_polyline"],
+                                    r["route_type"],
+                                    r["length"],
+                                    r["parent_route_id"],
+                                    r["has_children"],
+                                    r["is_segmented"],
+                                    r["segmentation_type"],
+                                    r["segmentation_points"],
+                                    r["segmentation_config"],
+                                    r["sync_status"],
+                                    r["is_enabled"],
+                                    r["deleted_at"],
+                                    r["tag"],
+                                    r["temp_geometry"],
+                                    r["start_lat"],
+                                    r["start_lng"],
+                                    r["end_lat"],
+                                    r["end_lng"],
+                                    r["min_lat"],
+                                    r["max_lat"],
+                                    r["min_lng"],
+                                    r["max_lng"],
+                                    r["latest_data_update_time"],
+                                    r["static_duration_seconds"],
+                                    r["current_duration_seconds"],
+                                    r["routes_status"],
+                                    r["synced_at"],
+                                )
+                                q, bind = prepare_text(insert_stmt, tup)
+                                sync_conn.execute(text(q), bind)
 
-                        cursor.close()
                         session.commit()
                     except Exception as e:
                         logging.exception(f"DB batch insert error: {e}")

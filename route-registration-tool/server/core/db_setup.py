@@ -28,7 +28,7 @@ def column_exists(cursor, table_name: str, column_name: str) -> bool:
     columns = [row[1] for row in cursor.fetchall()]
     return column_name in columns
 
-def init_db():
+def init_db_sqlite():
     conn = sqlite3.connect(DB)
     cursor = conn.cursor()
     cursor.execute("PRAGMA foreign_keys = ON;")
@@ -372,3 +372,21 @@ def init_db():
     
     conn.commit()
     conn.close()
+
+
+def init_db_postgres() -> None:
+    """Apply Alembic migrations to PostgreSQL (DATABASE_URL must be postgresql+asyncpg)."""
+    import os
+
+    from alembic import command
+    from alembic.config import Config
+
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ini = os.path.join(root, "alembic.ini")
+    cfg = Config(ini)
+    command.upgrade(cfg, "head")
+
+
+def init_db() -> None:
+    """Backward-compatible alias for SQLite file initialization."""
+    init_db_sqlite()

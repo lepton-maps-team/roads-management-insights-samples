@@ -57,6 +57,7 @@ Road Selection Tool is a tool that allows you to select roads from a map and sav
     - Configure your environment variables.
     - Copy `.env.example` into a file called `.env`.
     - Open the `.env` file and set Google API key there.
+    - **Database:** By default the app uses SQLite (`my_database.db` in this folder). For **PostgreSQL**, set `DATABASE_URL` to a `postgresql+asyncpg://...` URL, then run **`poetry run alembic upgrade head`** once to create tables. Use managed DB backups in production instead of the optional GCS SQLite file backup. Tune connection pool sizes if you hit `max_connections` limits (async app + background workers each use a pool).
 
 5.  **Run the application locally**
 
