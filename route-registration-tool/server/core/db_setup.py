@@ -14,14 +14,13 @@
 
 """DB setup entry points.
 
-DB-specific DDL/migration code is intentionally isolated per backend under
-`server/db/{sqlite,postgres}/`.
+DB-specific DDL/migration code lives under `server/db/{sqlite.py,postgres.py}`.
 """
 
 from __future__ import annotations
 
-from server.db.postgres.init_postgres import init_db_postgres as _init_db_postgres
-from server.db.sqlite.init_sqlite import init_db_sqlite as _init_db_sqlite
+from server.db.postgres import init_db_postgres as _init_db_postgres
+from server.db.sqlite import init_db_sqlite as _init_db_sqlite
 
 
 def init_db_sqlite() -> None:

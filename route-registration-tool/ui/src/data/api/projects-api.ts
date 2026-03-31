@@ -21,6 +21,67 @@ import { transformProject } from "../transformers"
 
 // Projects API
 export const projectsApi = {
+  // Get projects paginated
+  getPaginated: async (
+    page: number,
+    limit: number,
+    search?: string,
+  ): Promise<
+    ApiResponse<{
+      projects: Project[]
+      pagination: {
+        page: number
+        limit: number
+        total: number
+        has_more: boolean
+      }
+      route_summaries: Record<string, { total: number; deleted: number; added: number }>
+    }>
+  > => {
+    try {
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: String(limit),
+      })
+      if (search && search.trim()) {
+        params.set("search", search.trim())
+      }
+      const data = await apiClient.get<{
+        projects: unknown[]
+        pagination: {
+          page: number
+          limit: number
+          total: number
+          has_more: boolean
+        }
+        route_summaries: Record<
+          string,
+          { total: number; deleted: number; added: number }
+        >
+      }>(`/projects/list-paginated?${params.toString()}`)
+      return {
+        success: true,
+        data: {
+          projects: data.projects.map(transformProject),
+          pagination: data.pagination,
+          route_summaries: data.route_summaries ?? {},
+        },
+        message: "Projects fetched successfully",
+      }
+    } catch (error) {
+      return {
+        success: false,
+        data: {
+          projects: [],
+          pagination: { page, limit, total: 0, has_more: false },
+          route_summaries: {},
+        },
+        message:
+          error instanceof Error ? error.message : "Failed to fetch projects",
+      }
+    }
+  },
+
   // Get all projects
   getAll: async (): Promise<ApiResponse<Project[]>> => {
     try {

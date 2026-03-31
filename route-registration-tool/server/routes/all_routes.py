@@ -20,7 +20,6 @@ from .roads_connectivity import router as roads_connectivity_router
 from .sync import router as sync_router
 from .projects import router as projects_router
 from .tiles import router as tiles_router
-from .pubsub import router as pubsub_router
 from .routes_status import router as routes_status_router
 from .polygon_routes_api import router as polygon_routes_api_router
 from .projects_list import router as projects_list_router
@@ -46,7 +45,6 @@ router.include_router(roads_router, prefix="", tags=["Roads"])
 router.include_router(sync_router, prefix="", tags=["Sync"])
 router.include_router(projects_router, prefix="", tags=["Projects"])
 router.include_router(tiles_router, prefix="/tiles", tags=["Tiles"])
-router.include_router(pubsub_router, prefix="", tags=["Pub/Sub"])
 router.include_router(routes_status_router, prefix="", tags=["Routes Status"])
 router.include_router(polygon_routes_api_router, prefix="/polygon", tags=["Polygon Routes API"])
 router.include_router(projects_list_router, prefix="", tags=["Projects"])

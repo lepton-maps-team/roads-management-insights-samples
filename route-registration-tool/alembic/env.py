@@ -10,7 +10,7 @@ from alembic import context
 _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(_root, ".env"))
 
-from server.db.config import get_database_urls
+from server.db.common import get_database_urls
 
 config = context.config
 

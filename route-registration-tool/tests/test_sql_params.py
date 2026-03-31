@@ -5,7 +5,7 @@
 
 import pytest
 
-from server.db.sql_params import prepare_text
+from server.db.common import prepare_text
 
 
 def test_zero_placeholders():

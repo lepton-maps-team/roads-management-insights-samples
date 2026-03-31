@@ -19,7 +19,6 @@ export { roadsApi } from "./roads-api"
 export { polygonsApi } from "./polygons-api"
 export { googleRoutesApi } from "./google-routes-api"
 export { placesApi } from "./places-api"
-export { pubsubApi } from "./pubsub-api"
 export { usersApi } from "./users-api"
 export { bigqueryApi } from "./bigquery-api"
 

@@ -27,7 +27,6 @@ import {
   placesApi,
   polygonsApi,
   projectsApi,
-  pubsubApi,
   roadsApi,
   routesApi,
   usersApi,
@@ -81,6 +80,25 @@ export const useProjects = () => {
       return response.data
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+  })
+}
+
+export const useInfiniteProjects = (searchQuery: string, limit = 24) => {
+  return useInfiniteQuery({
+    queryKey: ["projects-infinite", searchQuery, limit],
+    queryFn: async ({ pageParam = 1 }) => {
+      const response = await projectsApi.getPaginated(
+        pageParam,
+        limit,
+        searchQuery || undefined,
+      )
+      if (!response.success) throw new Error(response.message)
+      return response.data
+    },
+    getNextPageParam: (lastPage) =>
+      lastPage.pagination.has_more ? lastPage.pagination.page + 1 : undefined,
+    staleTime: 5 * 60 * 1000,
+    initialPageParam: 1,
   })
 }
 
@@ -213,6 +231,7 @@ export const useCreateProject = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+      queryClient.invalidateQueries({ queryKey: ["projects-infinite"] })
       queryClient.invalidateQueries({ queryKey: queryKeys.gcpProjects })
     },
   })
@@ -235,6 +254,7 @@ export const useUpdateProject = () => {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+      queryClient.invalidateQueries({ queryKey: ["projects-infinite"] })
       queryClient.invalidateQueries({
         queryKey: queryKeys.project(variables.projectId),
       })
@@ -253,6 +273,7 @@ export const useDeleteProject = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects })
+      queryClient.invalidateQueries({ queryKey: ["projects-infinite"] })
       queryClient.invalidateQueries({ queryKey: queryKeys.gcpProjects })
     },
   })
@@ -2095,51 +2116,6 @@ export const useBatchFetchRoads = () => {
       const response = await roadsApi.batchFetch(roadIds, projectId)
       if (!response.success) throw new Error(response.message)
       return response.data
-    },
-  })
-}
-
-// PubSub Listener hooks
-export const useStartPubSubListener = () => {
-  return useMutation({
-    mutationFn: async (config: {
-      gcp_project_id: string
-      project_db_id: number
-      gcp_project_number: string
-    }) => {
-      const response = await pubsubApi.startListener(config)
-      if (!response.success) {
-        // Check if it's already running (400 error)
-        if (response.message?.includes("already running")) {
-          console.log("ℹ️ PubSub listener is already active")
-          return response.data
-        }
-        throw new Error(response.message)
-      }
-      return response.data
-    },
-    onError: (error) => {
-      console.error("❌ Failed to start PubSub listener:", error)
-    },
-  })
-}
-
-export const useStopPubSubListener = () => {
-  return useMutation({
-    mutationFn: async () => {
-      const response = await pubsubApi.stopListener()
-      if (!response.success) {
-        // Don't throw error for "not running" status - just log it
-        if (response.message?.includes("not currently running")) {
-          console.log("ℹ️ PubSub listener was not running")
-          return response.data
-        }
-        throw new Error(response.message)
-      }
-      return response.data
-    },
-    onError: (error) => {
-      console.error("❌ Failed to stop PubSub listener:", error)
     },
   })
 }

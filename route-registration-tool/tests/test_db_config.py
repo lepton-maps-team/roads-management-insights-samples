@@ -9,16 +9,17 @@ def test_postgres_urls_derived(monkeypatch):
         "DATABASE_URL",
         "postgresql+asyncpg://user:pass@localhost:5432/appdb",
     )
-    from server.db.config import get_database_urls
+    from server.db.common import get_database_urls
 
     async_u, sync_u = get_database_urls()
     assert "asyncpg" in async_u
     assert sync_u.startswith("postgresql+psycopg://")
+    assert "pass@" in sync_u, "Expected password to be present (not masked as '***')"
 
 
 def test_sqlite_urls_derived(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:////tmp/test_market163.db")
-    from server.db.config import get_database_urls
+    from server.db.common import get_database_urls
 
     async_u, sync_u = get_database_urls()
     assert "aiosqlite" in async_u
@@ -27,7 +28,7 @@ def test_sqlite_urls_derived(monkeypatch):
 
 def test_unsupported_driver(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "mysql+aiomysql://u:p@localhost/db")
-    from server.db.config import get_database_urls
+    from server.db.common import get_database_urls
 
     try:
         get_database_urls()

@@ -11,7 +11,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_query_db_select_one(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-    import server.db.database as database
+    import server.db.common as database
 
     importlib.reload(database)
 
@@ -25,7 +25,7 @@ async def test_query_db_select_one(monkeypatch):
 @pytest.mark.asyncio
 async def test_query_db_tuple_params(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-    import server.db.database as database
+    import server.db.common as database
 
     importlib.reload(database)
 

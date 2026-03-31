@@ -18,7 +18,6 @@ import asyncio
 import logging
 import os
 import re
-import threading
 from contextlib import asynccontextmanager
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -32,66 +31,22 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
 from server.utils.connection_manager import ConnectionManager
-from server.db.backends.factory import get_backend
-from server.db.database import dispose_async_engine
+from server.db.common import get_backend, dispose_async_engine
 from server.routes.all_routes import router as all_routes_router
 from server.utils.firebase_logger import initialize_firebase
-from server.utils.check_routes_status import RouteStatusChecker
 
 ws_manager = ConnectionManager()
-
-# Suppress thread errors during shutdown
-def handle_thread_exception(args):
-    """Handle exceptions in threads during shutdown"""
-    exc_value = args.exc_value
-    if exc_value is None:
-        return
-    
-    # Suppress event loop closed errors during shutdown (common with aiosqlite)
-    if isinstance(exc_value, RuntimeError):
-        error_msg = str(exc_value)
-        if "Event loop is closed" in error_msg or "loop is closed" in error_msg.lower():
-            # Suppress these errors - they're harmless during shutdown
-            return
-    
-    # Log other exceptions normally (only if not during shutdown)
-    try:
-        logging.error(f"Unhandled exception in thread: {exc_value}", exc_info=exc_value)
-    except Exception:
-        # If logging fails (e.g., during shutdown), just ignore
-        pass
-
-# Set thread exception handler
-threading.excepthook = handle_thread_exception
-
-# Global validation checker instance
-global_validation_checker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan handler for startup and shutdown"""
-    global global_validation_checker
 
     backend = get_backend()
-    backend.restore_from_gcs_if_applicable()
     backend.init_on_startup()
     # Initialize Firebase Admin SDK for route metrics logging
     initialize_firebase()
-
-    backend.start_backup_if_applicable()
-
-    # Start global validation checker (checks all projects, runs every 20 seconds)
-    logging.info("Starting global validation checker (runs every 20 seconds for all projects)")
-    global_validation_checker = RouteStatusChecker(project_number=None)
-    global_validation_checker.start_validation_checker(interval_seconds=20)
     
     yield
-    
-    # Shutdown - stop backup thread and validation checker
-    backend.stop_backup_if_running()
-    if global_validation_checker:
-        logging.info("Stopping global validation checker")
-        global_validation_checker.stop_validation_checker()
     
     try:
         await dispose_async_engine()
@@ -169,9 +124,22 @@ async def websocket_endpoint(ws: WebSocket):
 
 async def serve_react_app(full_path: str):
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+    DISCLAIMER_MESSAGE = os.getenv("DISCLAIMER_MESSAGE") or os.getenv("VITE_DISCLAIMER_MESSAGE") or ""
     print(f"Serving React app for path: {full_path}")
     html = open("ui/dist/index.html", "r").read()
     html = html.replace('window.GOOGLE_API_KEY = ""', f'window.GOOGLE_API_KEY = "{GOOGLE_API_KEY}"')
+
+    # Disclaimer message (runtime-injected for built UI served by FastAPI)
+    if 'window.DISCLAIMER_MESSAGE = ""' in html:
+        html = html.replace(
+            'window.DISCLAIMER_MESSAGE = ""',
+            f'window.DISCLAIMER_MESSAGE = "{DISCLAIMER_MESSAGE}"',
+        )
+    else:
+        # Backward compatible: inject next to GOOGLE_API_KEY if placeholder isn't present.
+        injection = f'\n      window.DISCLAIMER_MESSAGE = "{DISCLAIMER_MESSAGE}"'
+        html = html.replace('window.GOOGLE_API_KEY = ""', f'window.GOOGLE_API_KEY = ""{injection}')
+
     # Replace Google Maps API key using regex to handle all cases
     if GOOGLE_API_KEY:
         # Replace any existing key with our API key

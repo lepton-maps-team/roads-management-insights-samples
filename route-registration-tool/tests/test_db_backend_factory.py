@@ -22,7 +22,7 @@ import pytest
 def test_backend_selection_sqlite(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./tmp.db")
 
-    from server.db.backends.factory import get_backend
+    from server.db.common import get_backend
 
     backend = get_backend()
     assert backend.name == "sqlite"
@@ -34,7 +34,7 @@ def test_backend_selection_postgres(monkeypatch):
         "postgresql+asyncpg://user:pass@localhost:5432/appdb",
     )
 
-    from server.db.backends.factory import get_backend
+    from server.db.common import get_backend
 
     backend = get_backend()
     assert backend.name == "postgres"
@@ -45,10 +45,8 @@ def test_postgres_policy_raises_on_gcs_backup_enabled(monkeypatch):
         "DATABASE_URL",
         "postgresql+asyncpg://user:pass@localhost:5432/appdb",
     )
-    monkeypatch.setenv("GCS_DB_BACKUP_ENABLED", "true")
+    # GCS DB backup support was removed; ensure backend selection still works.
+    from server.db.common import get_backend
 
-    from server.db.backends.postgres_backend import PostgresBackend
-
-    backend = PostgresBackend()
-    with pytest.raises(ValueError, match="GCS_DB_BACKUP_ENABLED"):
-        backend.start_backup_if_applicable()
+    backend = get_backend()
+    assert backend.name == "postgres"

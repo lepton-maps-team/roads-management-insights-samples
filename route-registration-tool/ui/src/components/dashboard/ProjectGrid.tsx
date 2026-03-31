@@ -25,7 +25,7 @@ import {
 } from "@mui/material"
 import { useQueryClient } from "@tanstack/react-query"
 import { formatDistanceToNow } from "date-fns"
-import React, { useMemo, useRef, useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
 import { useNavigate } from "react-router-dom"
 
 import { noSnapshotFallback } from "../../assets/images"
@@ -38,7 +38,6 @@ import {
 import { projectsApi } from "../../data/api/projects-api"
 import {
   queryKeys,
-  useAllProjectsRoutesSummary,
   useDeleteProject,
   useUpdateProject,
 } from "../../hooks/use-api"
@@ -53,6 +52,13 @@ import SearchBar from "../common/SearchBar"
 interface ProjectGridProps {
   projects: Project[]
   isLoading?: boolean
+  searchQuery: string
+  onSearchChange: (value: string) => void
+  onLoadMore: () => void
+  hasMore: boolean
+  isLoadingMore?: boolean
+  totalProjects: number
+  routeSummaries: Record<string, { total: number; deleted: number; added: number }>
 }
 
 // Skeleton Project Card Component
@@ -182,7 +188,7 @@ const ProjectCardItem: React.FC<ProjectCardItemProps> = ({
   return (
     <Card
       elevation={0}
-      className="border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-200 hover:-translate-y-1 cursor-pointer relative group self-start"
+      className="border border-gray-200 overflow-hidden hover:shadow-lg transition-[box-shadow,border-color] duration-200 cursor-pointer relative group self-start"
       sx={{
         display: "flex",
         flexDirection: "column",
@@ -368,7 +374,16 @@ const ProjectCardItem: React.FC<ProjectCardItemProps> = ({
 const ProjectGrid: React.FC<ProjectGridProps> = ({
   projects,
   isLoading = false,
+  searchQuery,
+  onSearchChange,
+  onLoadMore,
+  hasMore,
+  isLoadingMore = false,
+  totalProjects,
+  routeSummaries,
 }) => {
+  const SCROLL_THRESHOLD_PX = 250
+
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const deleteProjectMutation = useDeleteProject()
@@ -377,25 +392,24 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
   const [projectToRename, setProjectToRename] = useState<Project | null>(null)
-  const [searchQuery, setSearchQuery] = useState("")
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const projectZipInputRef = useRef<HTMLInputElement>(null)
 
-  // Get all project IDs and fetch routes summary (syncable items) for all projects
-  const projectIds = useMemo(() => projects.map((p) => p.id), [projects])
-  const { data: routesSummary = {} } = useAllProjectsRoutesSummary(projectIds)
+  const visibleProjects = projects
+  const filteredProjects = projects
+  const loadMoreRequestedRef = useRef(false)
 
-  // Filter projects based on search query
-  const filteredProjects = useMemo(() => {
-    if (!searchQuery.trim()) {
-      return projects
-    }
-    const query = searchQuery.toLowerCase().trim()
-    return projects.filter((project) =>
-      project.name.toLowerCase().includes(query),
-    )
-  }, [projects, searchQuery])
+  useEffect(() => {
+    if (isLoading) return
+    // Reset scroll-request guard whenever result set changes.
+    loadMoreRequestedRef.current = false
+  }, [isLoading, searchQuery, projects.length])
+
+  useEffect(() => {
+    // Allow another network page request after render settles.
+    loadMoreRequestedRef.current = false
+  }, [projects.length, isLoadingMore])
 
   const handleProjectClick = (projectId: string) => {
     // Clear all layers before navigating to a project
@@ -570,11 +584,10 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
           className="bg-[#f8f9fa] backdrop-blur-[16px] rounded-[24px] overflow-hidden"
         >
           <CardContent
-            className={`pb-0 flex-1 min-h-0 ${
-              projects.length === 0 && !isLoading
+            className={`pb-0 flex-1 min-h-0 ${projects.length === 0 && !isLoading
                 ? "overflow-y-auto pretty-scrollbar"
                 : "overflow-hidden"
-            }`}
+              }`}
           >
             <div className="flex flex-col h-full min-h-0">
               {/* Header Card with Buttons */}
@@ -686,8 +699,8 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                   maxHeight: "calc(100vh - 300px)",
                 }}
               >
-                {(isLoading || projects.length > 0) && (
-                  <div className="mb-4 sm:mb-6 flex-shrink-0">
+                {(isLoading || totalProjects > 0 || searchQuery.trim().length > 0) && (
+                  <div className="mb-4 flex-shrink-0">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 pb-4 border-b border-gray-200">
                       <Typography
                         variant="h6"
@@ -696,17 +709,52 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                         All projects{" "}
                         {!isLoading && (
                           <span className="text-gray-500 font-normal">
-                            ({projects.length})
+                            ({totalProjects})
                           </span>
                         )}
                       </Typography>
                       <div className="flex items-center gap-3 flex-1 sm:flex-initial sm:justify-end">
-                        <SearchBar
-                          placeholder="Search projects..."
-                          value={searchQuery}
-                          onChange={setSearchQuery}
-                          disabled={isLoading}
-                        />
+                        <Box
+                          sx={{
+                            width: {
+                              xs: "100%",
+                              sm: searchQuery.trim().length > 0 ? "320px" : "210px",
+                            },
+                            maxWidth: "100%",
+                            transition: "width 280ms cubic-bezier(0.4, 0, 0.2, 1)",
+                            "&:focus-within": {
+                              width: { xs: "100%", sm: "320px" },
+                            },
+                          }}
+                        >
+                          <SearchBar
+                            placeholder="Search projects..."
+                            value={searchQuery}
+                            onChange={onSearchChange}
+                            disabled={false}
+                            searchSx={{
+                              backgroundColor: "#ffffff",
+                              borderRadius: "24px",
+                              border: "1px solid #e5e7eb",
+                              boxShadow: "0 1px 2px rgba(0, 0, 0, 0.05)",
+                              width: "100%",
+                              maxWidth: "100%",
+                              minWidth: "180px",
+                              transition:
+                                "border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+                              "&:hover": {
+                                backgroundColor: "#ffffff",
+                                borderColor: "#d1d5db",
+                                boxShadow: "0 2px 4px rgba(0, 0, 0, 0.08)",
+                              },
+                              "&:focus-within": {
+                                borderColor: PRIMARY_BLUE,
+                                boxShadow:
+                                  "0 0 0 3px rgba(9, 87, 208, 0.1), 0 2px 4px rgba(0, 0, 0, 0.08)",
+                              },
+                            }}
+                          />
+                        </Box>
                       </div>
                     </div>
                   </div>
@@ -812,12 +860,29 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8 overflow-y-auto pretty-scrollbar items-start flex-1 min-h-0">
-                    {filteredProjects.map((project) => (
+                  <div
+                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8 overflow-y-auto pretty-scrollbar items-start flex-1 min-h-0"
+                    onScroll={(e) => {
+                      if (isLoading) return
+                      if (!hasMore) return
+                      if (isLoadingMore) return
+                      if (loadMoreRequestedRef.current) return
+
+                      const el = e.currentTarget
+                      const distanceFromBottom =
+                        el.scrollHeight - el.scrollTop - el.clientHeight
+
+                      if (distanceFromBottom <= SCROLL_THRESHOLD_PX) {
+                        loadMoreRequestedRef.current = true
+                        onLoadMore()
+                      }
+                    }}
+                  >
+                    {visibleProjects.map((project) => (
                       <ProjectCardItem
                         key={project.id}
                         project={project}
-                        routeCount={routesSummary[project.id]?.total} // Use "total" count (total syncable items)
+                        routeCount={routeSummaries[project.id]?.total}
                         onClick={() => handleProjectClick(project.id)}
                         onDelete={(e) => handleDeleteClick(e, project)}
                         onRename={(e) => handleRenameClick(e, project)}

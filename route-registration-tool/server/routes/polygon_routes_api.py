@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Dict, Any, List, Optional
 from geographiclib.geodesic import Geodesic
-from server.db.database import query_db
+from server.db.common import query_db
 from server.utils.polygon_roads_api import create_roads_batch, fetch_roads_generator
 
 router = APIRouter()

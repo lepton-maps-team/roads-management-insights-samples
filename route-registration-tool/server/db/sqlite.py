@@ -2,21 +2,13 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
-import sqlite3
+from __future__ import annotations
+
 import logging
-import uuid as uuid_module
+import sqlite3
 
-from server.db.database import DB
+from server.db.common import DB
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -135,7 +127,11 @@ def init_db_sqlite() -> None:
             pass
 
     # Backfill project_uuid for any project that doesn't have one
-    cursor.execute("SELECT id FROM projects WHERE project_uuid IS NULL OR project_uuid = ''")
+    import uuid as uuid_module
+
+    cursor.execute(
+        "SELECT id FROM projects WHERE project_uuid IS NULL OR project_uuid = ''"
+    )
     for row in cursor.fetchall():
         cursor.execute(
             "UPDATE projects SET project_uuid = ? WHERE id = ?",
@@ -238,7 +234,9 @@ def init_db_sqlite() -> None:
     # Add original_route_geo_json column if it doesn't exist (for existing databases)
     if not column_exists(cursor, "routes", "original_route_geo_json"):
         try:
-            cursor.execute("ALTER TABLE routes ADD COLUMN original_route_geo_json TEXT;")
+            cursor.execute(
+                "ALTER TABLE routes ADD COLUMN original_route_geo_json TEXT;"
+            )
             conn.commit()
             logger.info("✅ Added original_route_geo_json column to routes table")
         except sqlite3.OperationalError as e:
@@ -467,3 +465,11 @@ def init_db_sqlite() -> None:
 
     conn.commit()
     conn.close()
+
+
+class SQLiteBackend:
+    name = "sqlite"
+
+    def init_on_startup(self) -> None:
+        init_db_sqlite()
+
