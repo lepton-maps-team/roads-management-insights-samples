@@ -1,4 +1,5 @@
 import os
+import configparser
 from logging.config import fileConfig
 
 from dotenv import load_dotenv
@@ -20,6 +21,9 @@ if config.config_file_name is not None:
 target_metadata = None
 
 _, sync_url = get_database_urls()
+# Alembic's Config uses configparser interpolation by default. Use ExtendedInterpolation
+# so '%' characters are treated literally (Cloud SQL URLs may contain percent-encoding).
+config.file_config._interpolation = configparser.ExtendedInterpolation()
 config.set_main_option("sqlalchemy.url", sync_url)
 
 

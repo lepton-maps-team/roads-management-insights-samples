@@ -42,7 +42,21 @@ async def lifespan(app: FastAPI):
     """Lifespan handler for startup and shutdown"""
 
     backend = get_backend()
-    backend.init_on_startup()
+    run_migrations = true
+    if run_migrations:
+        try:
+            backend.init_on_startup()
+        except Exception:
+            logging.exception(
+                "Database init failed during startup (backend=%s).",
+                getattr(backend, "name", "unknown"),
+            )
+            raise
+    else:
+        logging.warning(
+            "Skipping DB init/migrations on startup (backend=%s). Set RUN_DB_MIGRATIONS_ON_STARTUP=true to enable.",
+            getattr(backend, "name", "unknown"),
+        )
     # Initialize Firebase Admin SDK for route metrics logging
     initialize_firebase()
     

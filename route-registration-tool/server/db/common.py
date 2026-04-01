@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+import urllib.parse
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, Protocol
@@ -28,19 +29,69 @@ logger = logging.getLogger(__name__)
 _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
+def _is_cloud_run() -> bool:
+    # Cloud Run sets K_SERVICE and K_REVISION.
+    return bool(os.environ.get("K_SERVICE") or os.environ.get("K_REVISION"))
+
+
 def _default_sqlite_async_url() -> str:
-    db_path = os.path.join(_PROJECT_ROOT, "my_database.db")
+    # Cloud Run's writable filesystem location is /tmp.
+    # Using /app (image layer) can be read-only at runtime.
+    if _is_cloud_run():
+        db_path = os.path.join("/tmp", "my_database.db")
+    else:
+        db_path = os.path.join(_PROJECT_ROOT, "my_database.db")
     return f"sqlite+aiosqlite:///{db_path}"
+
+
+def _normalize_cloudsql_socket_host(url: str) -> str:
+    """
+    Ensure Cloud SQL socket paths in `host=` are *not* percent-encoded.
+
+    SQLAlchemy's URL rendering percent-encodes '/' and ':' in query params,
+    which can break libpq/psycopg if it receives `host=%2Fcloudsql%2F...`.
+    """
+    if "host=" not in url:
+        return url
+    # Only unquote the host= value; keep other query params untouched.
+    def _repl(m: re.Match) -> str:
+        prefix = m.group(1)
+        value = m.group(2)
+        decoded = urllib.parse.unquote(value)
+        return f"{prefix}{decoded}"
+
+    return re.sub(r"(\bhost=)([^&]+)", _repl, url)
 
 
 def get_database_urls() -> tuple[str, str]:
     """Return (async_sqlalchemy_url, sync_sqlalchemy_url)."""
-    raw = os.environ.get("DATABASE_URL", _default_sqlite_async_url())
-    u = make_url(raw)
+    raw_env = os.environ.get("DATABASE_URL")
+    raw = raw_env if raw_env is not None else _default_sqlite_async_url()
+    # Cloud Run / CI sometimes injects quoted env vars (e.g. `"postgresql+asyncpg://..."`)
+    # or an empty string. Normalize these to avoid crashing at import time.
+    raw = str(raw).strip()
+    if (raw.startswith('"') and raw.endswith('"')) or (raw.startswith("'") and raw.endswith("'")):
+        raw = raw[1:-1].strip()
+    if not raw:
+        raw = _default_sqlite_async_url()
+
+    try:
+        u = make_url(raw)
+    except Exception as e:
+        # Avoid killing the whole app due to a malformed env var. Fall back to SQLite
+        # while surfacing a clear log message for operators.
+        logger.error(
+            "Invalid DATABASE_URL provided (%s). Falling back to default SQLite DB.",
+            e,
+        )
+        raw = _default_sqlite_async_url()
+        u = make_url(raw)
     if u.drivername == "postgresql+asyncpg":
         sync = u.set(drivername="postgresql+psycopg")
-        return u.render_as_string(hide_password=False), sync.render_as_string(
-            hide_password=False
+        async_url = u.render_as_string(hide_password=False)
+        sync_url = sync.render_as_string(hide_password=False)
+        return _normalize_cloudsql_socket_host(async_url), _normalize_cloudsql_socket_host(
+            sync_url
         )
     if u.drivername == "sqlite+aiosqlite":
         sync = u.set(drivername="sqlite")
@@ -84,6 +135,9 @@ def get_database_path() -> str:
     p = get_sqlite_filesystem_path()
     if p is not None:
         return p
+    # Keep legacy behavior locally, but make Cloud Run writable by default.
+    if _is_cloud_run():
+        return os.path.join("/tmp", "my_database.db")
     return os.path.join(_PROJECT_ROOT, "my_database.db")
 
 
