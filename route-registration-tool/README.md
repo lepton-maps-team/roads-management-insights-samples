@@ -156,8 +156,7 @@ gcloud run deploy route-registration-tool \
   --allow-unauthenticated \
   --platform managed \
   --service-account=your-service-account-email \
-  --max-instances=1 \
-  --min-instances=0
+  --add-cloudsql-instances=PROJECT_NAME:REGION:INSTANCE (if using cloud SQL)
 ```
 
 ### Required Permissions
