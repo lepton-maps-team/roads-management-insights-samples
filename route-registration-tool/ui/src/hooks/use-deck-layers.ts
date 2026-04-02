@@ -35,8 +35,11 @@ import { useRouteSelection } from "./use-route-selection"
 
 export function useDeckLayers(projectId: string) {
   const { data: clientConfig } = useClientConfig()
-  const omitJurisdictionBoundary =
-    clientConfig?.enable_multitenant === true
+  const omitJurisdictionBoundary = Array.isArray(
+    clientConfig?.new_project_creation_step_indices,
+  )
+    ? !clientConfig?.new_project_creation_step_indices?.includes(3)
+    : (clientConfig?.new_project_creation_steps ?? 4) <= 1
   const mapMode = useProjectWorkspaceStore((state) => state.mapMode)
   const mapType = useProjectWorkspaceStore((state) => state.mapType)
   const selectedRoute = useProjectWorkspaceStore((state) => state.selectedRoute)

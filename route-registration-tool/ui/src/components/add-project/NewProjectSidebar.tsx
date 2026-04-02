@@ -18,7 +18,11 @@ import React, { useEffect, useRef, useState } from "react"
 import { FormProvider, useForm } from "react-hook-form"
 import { useNavigate } from "react-router-dom"
 
-import { useClientConfig, useCreateProject, useProjects } from "../../hooks/use-api"
+import {
+  useClientConfig,
+  useCreateProject,
+  useGcpProjects,
+} from "../../hooks/use-api"
 import { useProjectCreationStore } from "../../stores"
 import { RegionCreationFormData } from "../../types/region-creation"
 import { clearAllLayers } from "../../utils/clear-all-layers"
@@ -59,8 +63,6 @@ const FULL_FLOW_STEPS = [
   "Jurisdiction Boundary",
 ] as const
 
-const MULTITENANT_FLOW_STEPS = ["Project Name"] as const
-
 interface NewProjectSidebarProps {
   onStepChange?: (step: number) => void
 }
@@ -71,18 +73,58 @@ export default function NewProjectSidebar({
   const navigate = useNavigate()
   const [activeStep, setActiveStep] = useState(0)
   const didApplyMultitenantDefaults = useRef(false)
+  const didToastGcpError = useRef(false)
 
   const { data: clientConfig, isPending: isClientConfigPending } =
     useClientConfig()
-  const isMultitenant = clientConfig?.enable_multitenant === true
-  const stepLabels = isMultitenant
-    ? MULTITENANT_FLOW_STEPS
-    : FULL_FLOW_STEPS
+  const stepIndices =
+    clientConfig?.new_project_creation_step_indices &&
+    clientConfig.new_project_creation_step_indices.length > 0
+      ? clientConfig.new_project_creation_step_indices.slice().sort((a, b) => a - b)
+      : null
+
+  // Visible steps are chosen via step indices.
+  // If indices are not provided, fall back to the count-based behavior for backward compatibility.
+  const visibleOriginalSteps: number[] = stepIndices
+    ? Array.from(new Set(stepIndices)).filter((i) => i >= 0 && i <= 3)
+    : (() => {
+        const newProjectCreationSteps = Math.max(
+          1,
+          Math.min(4, clientConfig?.new_project_creation_steps ?? 4),
+        )
+
+        // Visible steps are a suffix of the original flow, but we always keep "Project Name".
+        // 1 step => [2]
+        // 2 steps => [2,3]
+        // 3 steps => [1,2,3]
+        // 4 steps => [0,1,2,3]
+        return [
+          ...(newProjectCreationSteps === 4 ? [0] : []),
+          ...(newProjectCreationSteps >= 3 ? [1] : []),
+          2,
+          ...(newProjectCreationSteps >= 2 ? [3] : []),
+        ]
+      })()
+
+  // Step 2 (Project Name) is always required.
+  if (!visibleOriginalSteps.includes(2)) {
+    visibleOriginalSteps.push(2)
+    visibleOriginalSteps.sort((a, b) => a - b)
+  }
+
+  const activeOriginalStep = visibleOriginalSteps[activeStep] ?? 2
+
+  const stepLabels = visibleOriginalSteps.map(
+    (i) => FULL_FLOW_STEPS[i as 0 | 1 | 2 | 3],
+  )
+
+  const isGcpStepVisible = visibleOriginalSteps.includes(0)
+  const isJurisdictionStepVisible = visibleOriginalSteps.includes(3)
 
   // Notify parent of step changes
   React.useEffect(() => {
-    onStepChange?.(activeStep)
-  }, [activeStep, onStepChange])
+    onStepChange?.(activeOriginalStep)
+  }, [activeOriginalStep, onStepChange])
 
   // Store hooks
   const {
@@ -95,7 +137,7 @@ export default function NewProjectSidebar({
 
   // Real API hooks
   const createProjectMutation = useCreateProject()
-  const { data: existingProjects } = useProjects()
+  const { data: gcpProjectsResponse } = useGcpProjects()
 
   // Form setup with validation
   const methods = useForm<RegionCreationFormData>({
@@ -148,38 +190,47 @@ export default function NewProjectSidebar({
   const { errors } = hookFormState
 
   useEffect(() => {
-    if (!isMultitenant || didApplyMultitenantDefaults.current) return
-    const list = existingProjects
-    if (!list?.length) return
+    // When the GCP step is hidden, we still need GCP ids for project creation.
+    if (isGcpStepVisible) return
+    if (didApplyMultitenantDefaults.current) return
+    if (!gcpProjectsResponse) return
+
+    if (!gcpProjectsResponse.success) {
+      if (!didToastGcpError.current && gcpProjectsResponse.message) {
+        didToastGcpError.current = true
+        toast.error("GCP Projects Fetch Failed", {
+          description: gcpProjectsResponse.message,
+        })
+      }
+      return
+    }
+
+    const projects = gcpProjectsResponse.data || []
+    if (!projects.length) return
+
     didApplyMultitenantDefaults.current = true
-    const first = list[0]
+    const first = projects[0]
+
     setValue(
       "googleCloudProjectId",
-      first.bigQueryColumn.googleCloudProjectId ?? "",
-      { shouldValidate: true, shouldDirty: false },
+      first.project_id ?? "",
+      { shouldValidate: false, shouldDirty: false },
     )
     setValue(
       "googleCloudProjectNumber",
-      first.bigQueryColumn.googleCloudProjectNumber ?? "",
-      { shouldValidate: true, shouldDirty: false },
+      first.project_number ?? "",
+      { shouldValidate: false, shouldDirty: false },
     )
-    setValue("subscriptionId", first.bigQueryColumn.subscriptionId ?? "", {
-      shouldValidate: true,
-      shouldDirty: false,
-    })
-    setValue("datasetName", first.datasetName?.trim() || "historical_roads_data", {
-      shouldValidate: true,
-      shouldDirty: false,
-    })
-  }, [isMultitenant, existingProjects, setValue])
+  }, [isGcpStepVisible, gcpProjectsResponse, setValue])
 
   useEffect(() => {
-    if (!isMultitenant || isClientConfigPending) return
+    // When the jurisdiction step is hidden, default to a world-covering polygon.
+    if (isJurisdictionStepVisible || isClientConfigPending) return
     updateGeoJsonState({
       uploadedGeoJson: WORLD_JURISDICTION_GEO_JSON,
       error: null,
     })
-  }, [isMultitenant, isClientConfigPending, updateGeoJsonState])
+  }, [isJurisdictionStepVisible, isClientConfigPending, updateGeoJsonState])
 
   // File upload with strict validation
   const handleFileUpload = (file: File) => {
@@ -206,18 +257,21 @@ export default function NewProjectSidebar({
         const geoJson = JSON.parse(text)
 
         // Validate GeoJSON structure
-        let features: any[] = []
+        type MaybePolygonFeature = {
+          geometry?: { type?: string }
+        }
+        let features: MaybePolygonFeature[] = []
+
         if (geoJson.type === "FeatureCollection") {
-          features = geoJson.features || []
+          features =
+            (geoJson as { features?: MaybePolygonFeature[] }).features || []
         } else if (geoJson.type === "Feature") {
-          features = [geoJson]
+          features = [geoJson as MaybePolygonFeature]
         } else if (geoJson.type === "Polygon") {
           // Direct Polygon geometry
           features = [
             {
-              type: "Feature",
-              geometry: geoJson,
-              properties: {},
+              geometry: { type: "Polygon" },
             },
           ]
         } else {
@@ -284,6 +338,7 @@ export default function NewProjectSidebar({
           description: "GeoJSON file validated successfully",
         })
       } catch (error) {
+        console.error("Failed to parse GeoJSON:", error)
         // JSON parse error - Error Type 4
         updateGeoJsonState({
           uploadedGeoJson: null,
@@ -367,8 +422,12 @@ export default function NewProjectSidebar({
     }
 
     // Only submit on the last step
-    const isValid = await trigger()
-    if (isValid && isStepValid(activeStep)) {
+    const lastStepValid =
+      activeOriginalStep === 2
+        ? (await trigger("name")) && isStepValid(activeOriginalStep)
+        : isStepValid(activeOriginalStep)
+
+    if (lastStepValid) {
       const formData = getValues()
       await onSubmit(formData)
     }
@@ -381,9 +440,9 @@ export default function NewProjectSidebar({
     updateFormState({ isLoading: true, error: null })
 
     try {
-      const boundaryGeoJson = isMultitenant
-        ? (geoJsonState.uploadedGeoJson ?? WORLD_JURISDICTION_GEO_JSON)
-        : geoJsonState.uploadedGeoJson
+      const boundaryGeoJson = isJurisdictionStepVisible
+        ? geoJsonState.uploadedGeoJson
+        : WORLD_JURISDICTION_GEO_JSON
 
       if (!boundaryGeoJson) {
         const errorMsg = "Please upload a valid GeoJSON boundary"
@@ -449,79 +508,70 @@ export default function NewProjectSidebar({
   }
 
   // Step validation - checks both field values and form validation errors
-  const isStepValid = (step: number): boolean => {
-    if (isMultitenant) {
-      if (step !== 0) return false
-      const hasName = watchedValues.name.trim() !== ""
-      const hasNameError = !!errors.name
-      return hasName && !hasNameError
-    }
-    switch (step) {
-      case 0: {
-        // Step 1: GCP Project - check values and validation errors
-        const hasGcpProjectId = watchedValues.googleCloudProjectId.trim() !== ""
-        const hasGcpProjectNumber =
-          watchedValues.googleCloudProjectNumber.trim() !== ""
-        const hasGcpErrors =
-          !!errors.googleCloudProjectId || !!errors.googleCloudProjectNumber
-        return hasGcpProjectId && hasGcpProjectNumber && !hasGcpErrors
-      }
-      case 1: {
-        // Step 2: Dataset Name - check value and validation errors
-        const hasDatasetName = watchedValues.datasetName?.trim() !== ""
-        const hasDatasetNameError = !!errors.datasetName
-        return hasDatasetName && !hasDatasetNameError
-      }
-      case 2: {
-        // Step 3: Project Name - check value and validation errors
-        const hasName = watchedValues.name.trim() !== ""
-        const hasNameError = !!errors.name
-        return hasName && !hasNameError
-      }
+  const isStepValid = (originalStep: number): boolean => {
+    const hasName = watchedValues.name.trim() !== ""
+    const hasNameError = !!errors.name
+
+    const hasDatasetName = watchedValues.datasetName?.trim() !== ""
+    const hasDatasetNameError = !!errors.datasetName
+
+    const hasGcpProjectId = watchedValues.googleCloudProjectId.trim() !== ""
+    const hasGcpProjectNumber =
+      watchedValues.googleCloudProjectNumber.trim() !== ""
+    const hasGcpErrors =
+      !!errors.googleCloudProjectId || !!errors.googleCloudProjectNumber
+
+    const hasBoundary =
+      geoJsonState.uploadedGeoJson !== null && !geoJsonState.error
+
+    const requiredGcpPresent =
+      hasGcpProjectId && hasGcpProjectNumber && !hasGcpErrors
+    const requiredDatasetPresent = hasDatasetName && !hasDatasetNameError
+
+    switch (originalStep) {
+      case 0:
+        return requiredGcpPresent
+      case 1:
+        return requiredDatasetPresent
+      case 2:
+        // Project Name is always visible, but earlier steps may be hidden.
+        return (
+          hasName &&
+          !hasNameError &&
+          requiredGcpPresent &&
+          requiredDatasetPresent
+        )
       case 3:
-        // Step 4: GeoJSON - check if uploaded and no error
-        return geoJsonState.uploadedGeoJson !== null && !geoJsonState.error
+        // Jurisdiction boundary is required when this is the last step.
+        return requiredGcpPresent && requiredDatasetPresent && hasBoundary
       default:
         return false
     }
   }
 
   const handleNext = async () => {
-    let isValid = false
-
-    if (isMultitenant) {
-      isValid = false
-    } else {
-      switch (activeStep) {
-        case 0: {
-          const gcpValid = await trigger([
-            "googleCloudProjectId",
-            "googleCloudProjectNumber",
-          ])
-          isValid = gcpValid && isStepValid(activeStep)
-          break
-        }
-        case 1: {
-          const datasetNameValid = await trigger("datasetName")
-          isValid = datasetNameValid && isStepValid(activeStep)
-          break
-        }
-        case 2: {
-          const nameValid = await trigger("name")
-          isValid = nameValid && isStepValid(activeStep)
-          break
-        }
+    const isOriginalStepValid = async (originalStep: number) => {
+      switch (originalStep) {
+        case 0:
+          return (
+            (await trigger([
+              "googleCloudProjectId",
+              "googleCloudProjectNumber",
+            ])) && isStepValid(0)
+          )
+        case 1:
+          return (await trigger("datasetName")) && isStepValid(1)
+        case 2:
+          return (await trigger("name")) && isStepValid(2)
         case 3:
-          isValid = isStepValid(activeStep)
-          break
+          return isStepValid(3)
         default:
-          isValid = false
+          return false
       }
     }
 
-    if (isValid) {
-      setActiveStep((prevStep) => prevStep + 1)
-    }
+    const valid = await isOriginalStepValid(activeOriginalStep)
+    if (valid) setActiveStep((prevStep) => prevStep + 1)
   }
 
   const handleBack = () => {
@@ -530,16 +580,8 @@ export default function NewProjectSidebar({
 
   const isLoading = formState.isLoading || createProjectMutation.isPending
 
-  const renderStepContent = (step: number) => {
-    if (isMultitenant) {
-      if (step !== 0) return null
-      return (
-        <Box className="py-3">
-          <ProjectNameForm validateProjectName={validateProjectName} />
-        </Box>
-      )
-    }
-    switch (step) {
+  const renderStepContent = (originalStep: number) => {
+    switch (originalStep) {
       case 0:
         return (
           <Box className="py-3">
@@ -615,7 +657,7 @@ export default function NewProjectSidebar({
         ) : (
           <FormProvider {...methods}>
             <form onSubmit={handleFormSubmit}>
-              {renderStepContent(activeStep)}
+              {renderStepContent(activeOriginalStep)}
             </form>
           </FormProvider>
         )}
@@ -648,7 +690,9 @@ export default function NewProjectSidebar({
             <Button
               onClick={handleNext}
               disabled={
-                !isStepValid(activeStep) || isLoading || isClientConfigPending
+                !isStepValid(activeOriginalStep) ||
+                isLoading ||
+                isClientConfigPending
               }
               variant="contained"
               // size="small"
@@ -660,7 +704,7 @@ export default function NewProjectSidebar({
             <Button
               onClick={handleSubmit(onSubmit)}
               disabled={
-                !isStepValid(activeStep) ||
+                !isStepValid(activeOriginalStep) ||
                 isLoading ||
                 isClientConfigPending
               }

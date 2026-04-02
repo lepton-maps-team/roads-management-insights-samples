@@ -56,18 +56,20 @@ export default function AddProjectPage() {
   }, [clearProjectCreationState])
 
   const apiKey = getGoogleMapsApiKey()
-  const multitenantMode = clientConfig?.enable_multitenant === true
+  const stepIndices = clientConfig?.new_project_creation_step_indices ?? null
+  const hideJurisdictionOverlay =
+    Array.isArray(stepIndices) && stepIndices.length > 0
+      ? !stepIndices.includes(3)
+      : (clientConfig?.new_project_creation_steps ?? 4) <= 1
 
   return (
     <PageLayout>
       <Main>
         <div className="flex-1 relative h-full w-full">
-          {/* Map Background — hide jurisdiction overlay in multi-tenant (world boundary is implicit) */}
+          {/* Map Background — hide jurisdiction overlay when the boundary step is skipped */}
           <AddProjectMapView
             apiKey={apiKey}
-            boundaryGeoJson={
-              multitenantMode ? null : geoJsonState.uploadedGeoJson
-            }
+            boundaryGeoJson={hideJurisdictionOverlay ? null : geoJsonState.uploadedGeoJson}
             style={{ width: "100%", height: "100%" }}
           />
 
@@ -77,7 +79,7 @@ export default function AddProjectPage() {
           {/* Help Panel - Always open, content changes based on step */}
           <HelpPanel
             step={currentStep}
-            multitenantProjectCreation={multitenantMode}
+            multitenantProjectCreation={false}
             minimized={helpPanelMinimized}
             onToggleMinimize={() => setHelpPanelMinimized(!helpPanelMinimized)}
           />

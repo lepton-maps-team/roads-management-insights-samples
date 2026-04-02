@@ -16,11 +16,21 @@
 
 from fastapi import APIRouter
 
-from server.utils.feature_flags import ENABLE_MULTITENANT
+from server.utils.feature_flags import (
+    ENABLE_MULTITENANT,
+    NEW_PROJECT_CREATION_STEP_INDICES,
+    NEW_PROJECT_CREATION_STEPS,
+    NEW_PROJECT_CREATION_SKIP_STEPS,
+)
 
 router = APIRouter(tags=["Client config"])
 
 
 @router.get("/client-config")
 async def get_client_config() -> dict:
-    return {"enable_multitenant": ENABLE_MULTITENANT}
+    return {
+        "enable_multitenant": ENABLE_MULTITENANT,
+        "new_project_creation_steps": NEW_PROJECT_CREATION_STEPS,
+        "new_project_creation_step_indices": NEW_PROJECT_CREATION_STEP_INDICES,
+        "new_project_creation_skip_steps": NEW_PROJECT_CREATION_SKIP_STEPS,
+    }

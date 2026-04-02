@@ -16,6 +16,9 @@ import { apiClient } from "../api-client"
 
 export interface ClientConfig {
   enable_multitenant: boolean
+  new_project_creation_steps: number
+  new_project_creation_step_indices?: number[]
+  new_project_creation_skip_steps?: number[]
 }
 
 export const clientConfigApi = {
