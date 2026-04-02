@@ -36,6 +36,30 @@ def init_db_sqlite() -> None:
     cursor.execute("PRAGMA foreign_keys = ON;")
 
     # ---------------------
+    # Sessions + Session links
+    # ---------------------
+    cursor.execute(
+        """
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """
+    )
+    cursor.execute(
+        """
+    CREATE TABLE IF NOT EXISTS session_links (
+        session_id TEXT NOT NULL,
+        linked_session_id TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (session_id, linked_session_id),
+        FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+        FOREIGN KEY(linked_session_id) REFERENCES sessions(id) ON DELETE CASCADE
+    )
+    """
+    )
+
+    # ---------------------
     # Users
     # ---------------------
     cursor.execute(
@@ -109,6 +133,7 @@ def init_db_sqlite() -> None:
         """
     CREATE TABLE IF NOT EXISTS projects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
         project_uuid TEXT,
         project_name TEXT NOT NULL,
         jurisdiction_boundary_geojson TEXT NOT NULL,
@@ -120,10 +145,21 @@ def init_db_sqlite() -> None:
         map_snapshot TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        deleted_at DATETIME
+        deleted_at DATETIME,
+        FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE SET NULL
     )
     """
     )
+
+    # Add session_id column if it doesn't exist (for existing databases)
+    if not column_exists(cursor, "projects", "session_id"):
+        try:
+            cursor.execute("ALTER TABLE projects ADD COLUMN session_id TEXT;")
+            conn.commit()
+            logger.info("✅ Added session_id column to projects table")
+        except sqlite3.OperationalError as e:
+            logger.error(f"⚠️ Could not add session_id column: {e}")
+            pass
 
     # Add project_uuid column if it doesn't exist and backfill for existing rows
     if not column_exists(cursor, "projects", "project_uuid"):

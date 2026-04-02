@@ -257,6 +257,17 @@ async def query_db(query, args=(), one=False, commit=False, conn=None):
         async def _execute(c: AsyncConnection):
             result = await c.execute(stmt, bind_params)
             if commit:
+                # Support INSERT/UPDATE/DELETE ... RETURNING ...
+                # This is the most reliable way to get generated IDs in Postgres.
+                if getattr(result, "returns_rows", False):
+                    try:
+                        return result.scalar_one()
+                    except Exception:
+                        try:
+                            return result.scalar()
+                        except Exception:
+                            pass
+
                 lr = getattr(result, "lastrowid", None)
                 if lr is not None:
                     return lr
@@ -267,8 +278,8 @@ async def query_db(query, args=(), one=False, commit=False, conn=None):
                             return ipk[0]
                     except Exception:
                         pass
-                    res2 = await c.execute(text("SELECT lastval()"))
-                    return res2.scalar_one()
+                    # Avoid `lastval()` here; it fails if no sequence was used in this session.
+                    return None
 
                 try:
                     ipk = result.inserted_primary_key
@@ -505,7 +516,8 @@ async def get_project_row(project_id: int) -> Any | None:
     query = """
     SELECT id, project_uuid, project_name, jurisdiction_boundary_geojson,
            google_cloud_project_id, google_cloud_project_number, subscription_id,
-           dataset_name, viewstate, map_snapshot, created_at, updated_at, deleted_at
+           dataset_name, viewstate, map_snapshot, created_at, updated_at, deleted_at,
+           session_id
     FROM projects
     WHERE id = ? AND deleted_at IS NULL
     """
@@ -516,7 +528,8 @@ async def list_project_rows() -> list[Any]:
     query = """
     SELECT id, project_uuid, project_name, jurisdiction_boundary_geojson,
            google_cloud_project_id, google_cloud_project_number, subscription_id,
-           dataset_name, viewstate, map_snapshot, created_at, updated_at, deleted_at
+           dataset_name, viewstate, map_snapshot, created_at, updated_at, deleted_at,
+           session_id
     FROM projects
     WHERE deleted_at IS NULL
     ORDER BY created_at DESC
@@ -525,29 +538,48 @@ async def list_project_rows() -> list[Any]:
 
 
 async def list_project_rows_paginated(
-    *, page: int, limit: int, search: str | None = None
+    *,
+    page: int,
+    limit: int,
+    search: str | None = None,
+    session_ids: list[str] | None = None,
 ) -> tuple[list[Any], int]:
     offset = (page - 1) * limit
     like = f"%{(search or '').strip()}%"
 
-    rows_query = """
+    session_filter_sql = ""
+    session_filter_args: tuple[Any, ...] = ()
+    if session_ids is not None:
+        if not session_ids:
+            return [], 0
+        placeholders = ",".join("?" for _ in session_ids)
+        session_filter_sql = f" AND session_id IN ({placeholders})"
+        session_filter_args = tuple(session_ids)
+
+    rows_query = f"""
     SELECT id, project_uuid, project_name, jurisdiction_boundary_geojson,
            google_cloud_project_id, google_cloud_project_number, subscription_id,
-           dataset_name, viewstate, map_snapshot, created_at, updated_at, deleted_at
+           dataset_name, viewstate, map_snapshot, created_at, updated_at, deleted_at,
+           session_id
     FROM projects
     WHERE deleted_at IS NULL
       AND (? = '%%' OR LOWER(project_name) LIKE LOWER(?))
+      {session_filter_sql}
     ORDER BY created_at DESC
     LIMIT ? OFFSET ?
     """
-    count_query = """
+    count_query = f"""
     SELECT COUNT(*) AS total
     FROM projects
     WHERE deleted_at IS NULL
       AND (? = '%%' OR LOWER(project_name) LIKE LOWER(?))
+      {session_filter_sql}
     """
-    rows = await query_db(rows_query, (like, like, limit, offset))
-    total_row = await query_db(count_query, (like, like), one=True)
+
+    rows_args = (like, like) + session_filter_args + (limit, offset)
+    count_args = (like, like) + session_filter_args
+    rows = await query_db(rows_query, rows_args)
+    total_row = await query_db(count_query, count_args, one=True)
     total = _row_get(total_row, key="total", index=0) if total_row else 0
     return rows, int(total or 0)
 
@@ -610,6 +642,7 @@ async def create_project(
     enable_multitenant: bool,
     project_uuid: str | None = None,
     viewstate_json: str | None = None,
+    session_id: str | None = None,
 ) -> Any:
     existing_name_query = """
     SELECT id FROM projects
@@ -653,18 +686,34 @@ async def create_project(
             viewstate_json = None
 
     project_uuid_val = project_uuid if project_uuid is not None else str(uuid.uuid4())
-    insert_query = """
+
+    if session_id is not None:
+        # Ensure session exists for FK (idempotent).
+        await query_db(
+            """
+            INSERT INTO sessions (id)
+            VALUES (?)
+            ON CONFLICT(id) DO NOTHING
+            """,
+            (session_id,),
+            commit=True,
+        )
+    is_postgres = str(async_engine.url.drivername).startswith("postgresql")
+    returning_sql = " RETURNING id" if is_postgres else ""
+    insert_query = f"""
     INSERT INTO projects (
-        project_uuid, project_name, jurisdiction_boundary_geojson, viewstate,
+        session_id, project_uuid, project_name, jurisdiction_boundary_geojson, viewstate,
         google_cloud_project_id, google_cloud_project_number, subscription_id, dataset_name
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    {returning_sql}
     """
 
     try:
         project_id = await query_db(
             insert_query,
             (
+                session_id,
                 project_uuid_val,
                 project_name,
                 jurisdiction_boundary_geojson,

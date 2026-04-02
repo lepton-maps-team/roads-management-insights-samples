@@ -30,6 +30,7 @@ import {
   projectsApi,
   roadsApi,
   routesApi,
+  sessionsApi,
   usersApi,
 } from "../data/api"
 import { syncApi } from "../data/api/sync-api"
@@ -45,11 +46,13 @@ import { UserPreferencesUpdate } from "../types/user"
 import { getGoogleMapsApiKey } from "../utils/api-helpers"
 import { captureCompressedMapSnapshot } from "../utils/map-snapshot"
 import { toast } from "../utils/toast"
+import { useSessionId } from "./use-session-id"
 
 // Query keys
 export const queryKeys = {
   projects: ["projects"] as const,
   project: (id: string) => ["projects", id] as const,
+  linkedSessions: (sessionId: string) => ["sessions", sessionId, "linked"] as const,
   gcpProjects: ["gcpProjects"] as const,
   routes: (projectId: string) => ["routes", projectId] as const,
   route: (id: string) => ["route", id] as const,
@@ -69,6 +72,62 @@ export const queryKeys = {
   bigqueryDatasets: (projectId: string) =>
     ["bigquery", "datasets", projectId] as const,
   clientConfig: ["clientConfig"] as const,
+}
+
+export const useLinkedSessions = (sessionId: string | null) => {
+  return useQuery({
+    queryKey: sessionId ? queryKeys.linkedSessions(sessionId) : ["sessions", "none"],
+    queryFn: async () => {
+      if (!sessionId) throw new Error("sessionId is required")
+      // Ensure exists (best-effort), then fetch links.
+      await sessionsApi.ensure(sessionId)
+      const response = await sessionsApi.getLinked(sessionId)
+      if (!response.success) throw new Error(response.message)
+      return response.data.linked_session_ids
+    },
+    enabled: !!sessionId,
+    staleTime: 30 * 1000,
+  })
+}
+
+export const useLinkSession = () => {
+  const queryClient = useQueryClient()
+  const sessionId = useSessionId()
+  return useMutation({
+    mutationFn: async (otherSessionId: string) => {
+      if (!sessionId) throw new Error("No active session")
+      const check = await sessionsApi.get(otherSessionId)
+      if (!check.success) throw new Error(check.message || "Session not found")
+      const response = await sessionsApi.link(sessionId, otherSessionId)
+      if (!response.success) throw new Error(response.message)
+      return true
+    },
+    onSuccess: () => {
+      if (sessionId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.linkedSessions(sessionId) })
+        queryClient.invalidateQueries({ queryKey: ["projects-infinite"] })
+      }
+    },
+  })
+}
+
+export const useUnlinkSession = () => {
+  const queryClient = useQueryClient()
+  const sessionId = useSessionId()
+  return useMutation({
+    mutationFn: async (otherSessionId: string) => {
+      if (!sessionId) throw new Error("No active session")
+      const response = await sessionsApi.unlink(sessionId, otherSessionId)
+      if (!response.success) throw new Error(response.message)
+      return true
+    },
+    onSuccess: () => {
+      if (sessionId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.linkedSessions(sessionId) })
+        queryClient.invalidateQueries({ queryKey: ["projects-infinite"] })
+      }
+    },
+  })
 }
 
 // Projects hooks
@@ -94,13 +153,15 @@ export const useClientConfig = () => {
 }
 
 export const useInfiniteProjects = (searchQuery: string, limit = 24) => {
+  const sessionId = useSessionId()
   return useInfiniteQuery({
-    queryKey: ["projects-infinite", searchQuery, limit],
+    queryKey: ["projects-infinite", sessionId, searchQuery, limit],
     queryFn: async ({ pageParam = 1 }) => {
       const response = await projectsApi.getPaginated(
         pageParam,
         limit,
         searchQuery || undefined,
+        sessionId ?? undefined,
       )
       if (!response.success) throw new Error(response.message)
       return response.data
@@ -230,12 +291,13 @@ export const useProject = (projectId: string) => {
 //used
 export const useCreateProject = () => {
   const queryClient = useQueryClient()
+  const sessionId = useSessionId()
 
   return useMutation({
     mutationFn: async (
       projectData: Omit<Project, "id" | "createdAt" | "updatedAt">,
     ) => {
-      const response = await projectsApi.create(projectData)
+      const response = await projectsApi.create(projectData, sessionId)
       if (!response.success) throw new Error(response.message)
       return response.data
     },

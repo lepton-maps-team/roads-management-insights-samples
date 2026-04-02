@@ -41,6 +41,9 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 
 class ProjectCreate(BaseModel):
     """Model for creating a new project"""
+    session_id: Optional[str] = Field(
+        None, description="Owning session ID (UUID). If omitted, project is unscoped."
+    )
     project_name: str = Field(..., description="Name of the project")
     jurisdiction_boundary_geojson: str = Field(..., description="GeoJSON boundary as string")
     google_cloud_project_id: Optional[str] = Field(None, description="Google Cloud Project ID")
@@ -62,6 +65,7 @@ class ProjectOut(BaseModel):
     """Model for project responses"""
     id: int
     project_uuid: Optional[str] = None
+    session_id: Optional[str] = None
     project_name: str
     jurisdiction_boundary_geojson: str
     google_cloud_project_id: Optional[str] = None
@@ -157,10 +161,19 @@ def row_to_project_out(row) -> ProjectOut:
             dataset_name = "historical_roads_data"
     except (KeyError, IndexError):
         dataset_name = "historical_roads_data"
+
+    session_id_val: str | None
+    try:
+        session_id_val = _get("session_id", 13)
+        if session_id_val is not None:
+            session_id_val = str(session_id_val)
+    except Exception:
+        session_id_val = None
     
     return ProjectOut(
         id=_get("id", 0),
         project_uuid=_get("project_uuid", 1),
+        session_id=session_id_val,
         project_name=_get("project_name", 2),
         jurisdiction_boundary_geojson=_get("jurisdiction_boundary_geojson", 3),
         google_cloud_project_id=_get("google_cloud_project_id", 4),
@@ -173,6 +186,44 @@ def row_to_project_out(row) -> ProjectOut:
         updated_at=_to_optional_string(_get("updated_at", 11)),
         deleted_at=_get("deleted_at", 12)
     )
+
+
+def _validate_session_id(session_id: str) -> str:
+    try:
+        import uuid as _uuid
+
+        return str(_uuid.UUID(str(session_id)))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid session_id (expected UUID).")
+
+
+async def _get_accessible_session_ids(session_id: str) -> list[str]:
+    """Return [session_id] + directly linked sessions (non-transitive)."""
+    sid = _validate_session_id(session_id)
+    rows = await query_db(
+        """
+        SELECT linked_session_id
+        FROM session_links
+        WHERE session_id = ?
+        """,
+        (sid,),
+    )
+    linked: list[str] = []
+    for r in rows:
+        try:
+            linked.append(r["linked_session_id"])
+        except Exception:
+            mapping = getattr(r, "_mapping", None)
+            if mapping is not None and "linked_session_id" in mapping:
+                linked.append(mapping["linked_session_id"])
+    out = [sid] + [s for s in linked if s]
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for s in out:
+        if s not in seen:
+            seen.add(s)
+            uniq.append(s)
+    return uniq
 
 def sanitize_error_for_5xx(e: Exception) -> str:
     s = str(e)
@@ -209,11 +260,15 @@ async def get_projects_paginated(
     page: int = Query(1, ge=1),
     limit: int = Query(24, ge=1, le=100),
     search: Optional[str] = Query(None),
+    session_id: Optional[str] = Query(None, description="Session ID (UUID) to scope projects."),
 ):
     """Get paginated non-deleted projects."""
     try:
+        session_ids = None
+        if session_id:
+            session_ids = await _get_accessible_session_ids(session_id)
         rows, total = await projects_repo.list_project_rows_paginated(
-            page=page, limit=limit, search=search
+            page=page, limit=limit, search=search, session_ids=session_ids
         )
         projects = [row_to_project_out(row) for row in rows]
         project_ids = [p.id for p in projects]
@@ -327,6 +382,9 @@ async def create_project(project_data: ProjectCreate):
             enable_multitenant=ENABLE_MULTITENANT,
             project_uuid=project_uuid_val,
             viewstate_json=viewstate_json,
+            session_id=_validate_session_id(project_data.session_id)
+            if project_data.session_id
+            else None,
         )
 
         created_project = row_to_project_out(row)

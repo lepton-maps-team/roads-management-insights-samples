@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// ui/src/components/add-project/NewProjectSidebar.tsx
 import { Box, CircularProgress, Paper, Typography } from "@mui/material"
 import React, { useEffect, useRef, useState } from "react"
 import { FormProvider, useForm } from "react-hook-form"
@@ -26,12 +25,14 @@ import {
 import { useProjectCreationStore } from "../../stores"
 import { RegionCreationFormData } from "../../types/region-creation"
 import { clearAllLayers } from "../../utils/clear-all-layers"
+import { buildSessionPath } from "../../utils/session"
 import { toast } from "../../utils/toast"
 import Button from "../common/Button"
 import DatasetNameForm from "./DatasetNameForm"
 import GcpProjectSelector from "./GcpProjectSelector"
 import GeoJsonUploader from "./GeoJsonUploader"
 import ProjectNameForm from "./ProjectNameForm"
+import { useSessionId } from "../../hooks/use-session-id"
 
 /** WGS84 polygon covering the full globe (multi-tenant default jurisdiction). */
 const WORLD_JURISDICTION_GEO_JSON: GeoJSON.FeatureCollection = {
@@ -71,6 +72,7 @@ export default function NewProjectSidebar({
   onStepChange,
 }: NewProjectSidebarProps) {
   const navigate = useNavigate()
+  const sessionId = useSessionId()
   const [activeStep, setActiveStep] = useState(0)
   const didApplyMultitenantDefaults = useRef(false)
   const didToastGcpError = useRef(false)
@@ -79,7 +81,7 @@ export default function NewProjectSidebar({
     useClientConfig()
   const stepIndices =
     clientConfig?.new_project_creation_step_indices &&
-    clientConfig.new_project_creation_step_indices.length > 0
+      clientConfig.new_project_creation_step_indices.length > 0
       ? clientConfig.new_project_creation_step_indices.slice().sort((a, b) => a - b)
       : null
 
@@ -88,23 +90,23 @@ export default function NewProjectSidebar({
   const visibleOriginalSteps: number[] = stepIndices
     ? Array.from(new Set(stepIndices)).filter((i) => i >= 0 && i <= 3)
     : (() => {
-        const newProjectCreationSteps = Math.max(
-          1,
-          Math.min(4, clientConfig?.new_project_creation_steps ?? 4),
-        )
+      const newProjectCreationSteps = Math.max(
+        1,
+        Math.min(4, clientConfig?.new_project_creation_steps ?? 4),
+      )
 
-        // Visible steps are a suffix of the original flow, but we always keep "Project Name".
-        // 1 step => [2]
-        // 2 steps => [2,3]
-        // 3 steps => [1,2,3]
-        // 4 steps => [0,1,2,3]
-        return [
-          ...(newProjectCreationSteps === 4 ? [0] : []),
-          ...(newProjectCreationSteps >= 3 ? [1] : []),
-          2,
-          ...(newProjectCreationSteps >= 2 ? [3] : []),
-        ]
-      })()
+      // Visible steps are a suffix of the original flow, but we always keep "Project Name".
+      // 1 step => [2]
+      // 2 steps => [2,3]
+      // 3 steps => [1,2,3]
+      // 4 steps => [0,1,2,3]
+      return [
+        ...(newProjectCreationSteps === 4 ? [0] : []),
+        ...(newProjectCreationSteps >= 3 ? [1] : []),
+        2,
+        ...(newProjectCreationSteps >= 2 ? [3] : []),
+      ]
+    })()
 
   // Step 2 (Project Name) is always required.
   if (!visibleOriginalSteps.includes(2)) {
@@ -484,7 +486,11 @@ export default function NewProjectSidebar({
         })
         // Clear all layers before navigating to the new project
         clearAllLayers()
-        navigate(`/project/${project.id}`)
+        navigate(
+          sessionId
+            ? buildSessionPath(sessionId, `/project/${project.id}`)
+            : `/project/${project.id}`,
+        )
       } else {
         throw new Error("Failed to create project")
       }
@@ -504,7 +510,7 @@ export default function NewProjectSidebar({
 
   const handleCancel = () => {
     clearProjectCreationState()
-    navigate("/dashboard")
+    navigate(sessionId ? buildSessionPath(sessionId, "/dashboard") : "/dashboard")
   }
 
   // Step validation - checks both field values and form validation errors

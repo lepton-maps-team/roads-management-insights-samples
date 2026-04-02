@@ -16,6 +16,7 @@ import CenterFocusStrong from "@mui/icons-material/CenterFocusStrong"
 import DownloadIcon from "@mui/icons-material/Download"
 import InfoIcon from "@mui/icons-material/Info"
 import SettingsIcon from "@mui/icons-material/Settings"
+import ShareIcon from "@mui/icons-material/Share"
 import { Divider, IconButton, Menu, MenuItem, Tooltip } from "@mui/material"
 import { useCallback, useState } from "react"
 import { useLocation, useParams } from "react-router-dom"
@@ -29,22 +30,27 @@ import { useRoutesSummary } from "../../hooks"
 import { useProjectWorkspaceStore } from "../../stores/project-workspace-store"
 import { toast } from "../../utils/toast"
 import { restoreViewport } from "../../utils/viewport-utils"
+import { buildSessionPath } from "../../utils/session"
+import { useSessionId } from "../../hooks/use-session-id"
 import MapSearchBar from "../common/MapSearchBar"
+import SessionManagerDialog from "../session/SessionManagerDialog"
 import UserPreferencesDialog from "../user-preferences/UserPreferencesDialog"
 
 export default function Navbar() {
   const { navigateWithCheck } = useUnsavedChangesNavigation()
   const location = useLocation()
   const { projectId } = useParams<{ projectId: string }>()
+  const sessionId = useSessionId()
   const projectData = useProjectWorkspaceStore((state) => state.projectData)
   const { mapType, toggleMapType } = useProjectWorkspaceStore()
 
   const [preferencesDialogOpen, setPreferencesDialogOpen] = useState(false)
+  const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [downloadMenuAnchor, setDownloadMenuAnchor] =
     useState<null | HTMLElement>(null)
 
-  const isProjectPage = location.pathname.startsWith("/project/")
+  const isProjectPage = Boolean(projectId) && location.pathname.includes("/project/")
 
   // Fetch routes summary for displaying total count
   const { data: routesSummary } = useRoutesSummary(
@@ -52,7 +58,9 @@ export default function Navbar() {
   )
 
   const handleLogoClick = () => {
-    navigateWithCheck("/dashboard")
+    navigateWithCheck(
+      sessionId ? buildSessionPath(sessionId, "/dashboard") : "/dashboard",
+    )
   }
 
   const handleHome = useCallback(() => {
@@ -135,6 +143,10 @@ export default function Navbar() {
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-[1001] bg-white border-b border-gray-200">
+      <SessionManagerDialog
+        open={sessionManagerOpen}
+        onClose={() => setSessionManagerOpen(false)}
+      />
       <div className="flex items-center justify-between h-16 px-6 relative">
         {/* Left Side: Logo + Divider + App Name */}
         <div
@@ -304,6 +316,20 @@ export default function Navbar() {
               </Menu>
             </>
           )}
+
+          <Tooltip title="Session sharing" arrow>
+            <span>
+              <IconButton
+                onClick={() => setSessionManagerOpen(true)}
+                size="small"
+                aria-label="Session sharing"
+                disabled={!sessionId}
+                data-tour="session-sharing"
+              >
+                <ShareIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
 
           <Tooltip title="Settings" arrow>
             <IconButton

@@ -82,20 +82,24 @@ const Modal: React.FC<ModalProps> = ({
             ...titleSx,
           }}
         >
-          <Typography
-            variant="h6"
-            component="div"
-            sx={{
-              fontSize: "22px",
-              fontFamily: '"Google Sans", sans-serif',
-              fontWeight: 400,
-              color: "#202124",
-              lineHeight: "28px",
-              letterSpacing: "0",
-            }}
-          >
-            {title}
-          </Typography>
+          {typeof title === "string" ? (
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{
+                fontSize: "22px",
+                fontFamily: '"Google Sans", sans-serif',
+                fontWeight: 400,
+                color: "#202124",
+                lineHeight: "28px",
+                letterSpacing: "0",
+              }}
+            >
+              {title}
+            </Typography>
+          ) : (
+            title
+          )}
         </DialogTitle>
       )}
       <DialogContent

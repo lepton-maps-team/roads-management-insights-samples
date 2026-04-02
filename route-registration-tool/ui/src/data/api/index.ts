@@ -22,6 +22,7 @@ export { placesApi } from "./places-api"
 export { usersApi } from "./users-api"
 export { bigqueryApi } from "./bigquery-api"
 export { clientConfigApi } from "./client-config-api"
+export { sessionsApi } from "./sessions-api"
 
 // Re-export API types
 export type {

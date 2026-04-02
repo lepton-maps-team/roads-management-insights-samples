@@ -26,6 +26,7 @@ export const projectsApi = {
     page: number,
     limit: number,
     search?: string,
+    sessionId?: string,
   ): Promise<
     ApiResponse<{
       projects: Project[]
@@ -45,6 +46,9 @@ export const projectsApi = {
       })
       if (search && search.trim()) {
         params.set("search", search.trim())
+      }
+      if (sessionId && sessionId.trim()) {
+        params.set("session_id", sessionId.trim())
       }
       const data = await apiClient.get<{
         projects: unknown[]
@@ -140,9 +144,11 @@ export const projectsApi = {
   // Create new project
   create: async (
     projectData: Omit<Project, "id" | "createdAt" | "updatedAt">,
+    sessionId?: string | null,
   ): Promise<ApiResponse<Project>> => {
     try {
       const requestData = {
+        session_id: sessionId || undefined,
         project_name: projectData.name, // Backend API expects project_name
         jurisdiction_boundary_geojson: JSON.stringify(
           projectData.boundaryGeoJson,

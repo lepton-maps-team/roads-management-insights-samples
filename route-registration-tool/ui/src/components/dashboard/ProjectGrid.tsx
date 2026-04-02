@@ -43,7 +43,9 @@ import {
 } from "../../hooks/use-api"
 import { Project } from "../../stores/project-workspace-store"
 import { clearAllLayers } from "../../utils/clear-all-layers"
+import { buildSessionPath } from "../../utils/session"
 import { toast } from "../../utils/toast"
+import { useSessionId } from "../../hooks/use-session-id"
 import Button from "../common/Button"
 import Modal from "../common/Modal"
 import RenameDialog from "../common/RenameDialog"
@@ -59,6 +61,7 @@ interface ProjectGridProps {
   isLoadingMore?: boolean
   totalProjects: number
   routeSummaries: Record<string, { total: number; deleted: number; added: number }>
+  tourStepId?: string | null
 }
 
 // Skeleton Project Card Component
@@ -381,10 +384,17 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
   isLoadingMore = false,
   totalProjects,
   routeSummaries,
+  tourStepId = null,
 }) => {
   const SCROLL_THRESHOLD_PX = 250
 
+  // Tour behavior: during "Open a project" step, if there are no projects yet,
+  // render the normal loading skeleton grid so the user sees what a project card looks like.
+  const isTourSkeletonMode = tourStepId === "open-project" && projects.length === 0
+  const effectiveIsLoading = isLoading || isTourSkeletonMode
+
   const navigate = useNavigate()
+  const sessionId = useSessionId()
   const queryClient = useQueryClient()
   const deleteProjectMutation = useDeleteProject()
   const updateProjectMutation = useUpdateProject()
@@ -401,10 +411,10 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
   const loadMoreRequestedRef = useRef(false)
 
   useEffect(() => {
-    if (isLoading) return
+    if (effectiveIsLoading) return
     // Reset scroll-request guard whenever result set changes.
     loadMoreRequestedRef.current = false
-  }, [isLoading, searchQuery, projects.length])
+  }, [effectiveIsLoading, searchQuery, projects.length])
 
   useEffect(() => {
     // Allow another network page request after render settles.
@@ -414,11 +424,15 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
   const handleProjectClick = (projectId: string) => {
     // Clear all layers before navigating to a project
     clearAllLayers()
-    navigate(`/project/${projectId}`)
+    navigate(
+      sessionId
+        ? buildSessionPath(sessionId, `/project/${projectId}`)
+        : `/project/${projectId}`,
+    )
   }
 
   const handleAddProjectClick = () => {
-    navigate("/add-project")
+    navigate(sessionId ? buildSessionPath(sessionId, "/add-project") : "/add-project")
   }
 
   const handleImportProjectClick = () => {
@@ -625,6 +639,7 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                           onClick={handleImportProjectClick}
                           variant="outlined"
                           startIcon={<UploadFile />}
+                          data-tour="import-project"
                           sx={{
                             borderColor: "#dadce0",
                             color: "#5f6368",
@@ -653,6 +668,7 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                           onClick={handleAddProjectClick}
                           variant="contained"
                           startIcon={<Add />}
+                          data-tour="add-project"
                           sx={{
                             backgroundColor: "#0b57d0",
                             color: "#ffffff",
@@ -693,13 +709,16 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
               {/* Projects Grid Section */}
               <div
                 className="min-w-0 px-5 py-4 flex flex-col"
+                data-tour="project-grid"
                 style={{
                   height: "calc(100vh - 300px)",
                   minHeight: "400px",
                   maxHeight: "calc(100vh - 300px)",
                 }}
               >
-                {(isLoading || totalProjects > 0 || searchQuery.trim().length > 0) && (
+                {(effectiveIsLoading ||
+                  totalProjects > 0 ||
+                  searchQuery.trim().length > 0) && (
                   <div className="mb-4 flex-shrink-0">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 pb-4 border-b border-gray-200">
                       <Typography
@@ -707,7 +726,7 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                         className="font-semibold text-gray-900 text-base sm:text-lg"
                       >
                         All projects{" "}
-                        {!isLoading && (
+                        {!effectiveIsLoading && (
                           <span className="text-gray-500 font-normal">
                             ({totalProjects})
                           </span>
@@ -727,7 +746,8 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                             },
                           }}
                         >
-                          <SearchBar
+                          <div data-tour="project-search">
+                            <SearchBar
                             placeholder="Search projects..."
                             value={searchQuery}
                             onChange={onSearchChange}
@@ -753,17 +773,23 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                                   "0 0 0 3px rgba(9, 87, 208, 0.1), 0 2px 4px rgba(0, 0, 0, 0.08)",
                               },
                             }}
-                          />
+                            />
+                          </div>
                         </Box>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {isLoading ? (
+                {effectiveIsLoading ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8 overflow-y-auto pretty-scrollbar items-start flex-1 min-h-0">
                     {[...Array(6)].map((_, index) => (
-                      <ProjectCardSkeleton key={`skeleton-${index}`} />
+                      <div
+                        key={`skeleton-${index}`}
+                        data-tour={index === 0 ? "first-project-card-skeleton" : undefined}
+                      >
+                        <ProjectCardSkeleton />
+                      </div>
                     ))}
                   </div>
                 ) : projects.length === 0 ? (
@@ -863,7 +889,7 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                   <div
                     className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-x-3 sm:gap-x-4 gap-y-6 sm:gap-y-8 overflow-y-auto pretty-scrollbar items-start flex-1 min-h-0"
                     onScroll={(e) => {
-                      if (isLoading) return
+                      if (effectiveIsLoading) return
                       if (!hasMore) return
                       if (isLoadingMore) return
                       if (loadMoreRequestedRef.current) return
@@ -878,16 +904,35 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                       }
                     }}
                   >
-                    {visibleProjects.map((project) => (
-                      <ProjectCardItem
-                        key={project.id}
-                        project={project}
-                        routeCount={routeSummaries[project.id]?.total}
-                        onClick={() => handleProjectClick(project.id)}
-                        onDelete={(e) => handleDeleteClick(e, project)}
-                        onRename={(e) => handleRenameClick(e, project)}
-                      />
-                    ))}
+                    {visibleProjects.map((project, index) => {
+                      const card = (
+                        <ProjectCardItem
+                          key={project.id}
+                          project={project}
+                          routeCount={routeSummaries[project.id]?.total}
+                          onClick={() => handleProjectClick(project.id)}
+                          onDelete={(e) => handleDeleteClick(e, project)}
+                          onRename={(e) => handleRenameClick(e, project)}
+                        />
+                      )
+                      if (index === 0) {
+                        return (
+                          <div key={project.id} data-tour="first-project-card">
+                            {card}
+                          </div>
+                        )
+                      }
+                      return card
+                    })}
+
+                    {/* Tour-only skeleton placeholder for "Open a project" step */}
+                    {tourStepId === "open-project" &&
+                      !isLoading &&
+                      visibleProjects.length === 0 && (
+                        <div data-tour="first-project-card-skeleton">
+                          <ProjectCardSkeleton />
+                        </div>
+                      )}
                     {isLoadingMore && (
                       <div className="col-span-full flex justify-center py-4">
                         <Skeleton

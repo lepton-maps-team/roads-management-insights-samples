@@ -12,25 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { useEffect } from "react"
-import { Outlet, useParams } from "react-router-dom"
+import { useParams } from "react-router-dom"
 
-import { UnsavedChangesProvider } from "../../contexts/unsaved-changes-context"
-import { isValidUuid, storeSessionId } from "../../utils/session"
+import { isValidUuid, loadStoredSessionId } from "../utils/session"
 
-export default function RootLayout() {
-  const { sessionId } = useParams<{ sessionId?: string }>()
-
-  useEffect(() => {
-    if (sessionId && isValidUuid(sessionId)) {
-      storeSessionId(sessionId)
-    }
-  }, [sessionId])
-
-  return (
-    <UnsavedChangesProvider>
-      <Outlet />
-    </UnsavedChangesProvider>
-  )
+export function useSessionId(): string | null {
+  const params = useParams()
+  const fromRoute = params.sessionId
+  if (typeof fromRoute === "string" && isValidUuid(fromRoute)) return fromRoute
+  return loadStoredSessionId()
 }
 
