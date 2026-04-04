@@ -57,6 +57,11 @@ Road Selection Tool is a tool that allows you to select roads from a map and sav
     - Configure your environment variables.
     - Copy `.env.example` into a file called `.env`.
     - Open the `.env` file and set Google API key there.
+    - **Database (supported)**:
+      - **SQLite (default)**: uses an on-disk SQLite DB file (defaults to `my_database.db` in the `route-registration-tool` folder).
+        - Configure with `DATABASE_URL=sqlite+aiosqlite:///./my_database.db` (or omit `DATABASE_URL` to use the default).
+      - **PostgreSQL**: set `DATABASE_URL` to a `postgresql+asyncpg://...` URL.
+
 
 5.  **Run the application locally**
 
@@ -151,8 +156,7 @@ gcloud run deploy route-registration-tool \
   --allow-unauthenticated \
   --platform managed \
   --service-account=your-service-account-email \
-  --max-instances=1 \
-  --min-instances=0
+  --add-cloudsql-instances=PROJECT_NAME:REGION:INSTANCE (if using cloud SQL)
 ```
 
 ### Required Permissions

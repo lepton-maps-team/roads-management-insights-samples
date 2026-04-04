@@ -70,7 +70,7 @@ def _calculate_road_length(coords: List[List[float]]) -> float:
     
     return round(total_length, 2)
 
-def create_roads_sqlite(roads: list, project_id: int, priority_list: Optional[List[str]] = None):
+def create_roads_batch(roads: list, project_id: int, priority_list: Optional[List[str]] = None):
     if not project_id:
         raise ValueError("Project ID is required")
 
