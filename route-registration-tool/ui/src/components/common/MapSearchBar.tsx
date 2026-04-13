@@ -426,9 +426,9 @@ const MapSearchBar: React.FC<MapSearchBarProps> = ({
               onKeyDown={handleKeyDown}
               searchSx={{
                 // Fits crowded navbar on small viewports; caps at 240px on wide screens
-                width: "clamp(136px, calc(100vw - 10.5rem), 240px)",
-                minWidth: "clamp(136px, calc(100vw - 10.5rem), 240px)",
-                maxWidth: "clamp(136px, calc(100vw - 10.5rem), 240px)",
+                width: "240px",
+                minWidth: "240px",
+                maxWidth: "240px",
                 borderRadius: "24px",
                 border: "1px solid #e5e7eb",
                 transition: "width 0.3s ease, border-color 0.2s ease",
@@ -470,7 +470,7 @@ const MapSearchBar: React.FC<MapSearchBarProps> = ({
                 isOpen={showAutocomplete}
                 selectedIndex={selectedIndex}
                 onSelect={handlePlaceSelect}
-                onClose={() => {}}
+                onClose={() => { }}
                 isLoading={isLoadingAutocomplete || isLoadingPlaceDetails}
                 anchorElement={searchInputRef.current}
                 showMinCharsMessage={showMinCharsMessage}

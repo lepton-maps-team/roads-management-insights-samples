@@ -18,18 +18,6 @@
 
 /* Google Sans font family */
 @layer base {
-  /* Navbar height: two-line header below sm; single row sm+ (matches Tailwind sm = 600px) */
-  :root {
-    /* Two-line navbar: GMP row + application title block */
-    --app-nav-height: 5.75rem;
-  }
-
-  @media (min-width: 600px) {
-    :root {
-      --app-nav-height: 4rem;
-    }
-  }
-
   html {
     font-family: "Google Sans", "Roboto", "Helvetica", "Arial", sans-serif;
   }

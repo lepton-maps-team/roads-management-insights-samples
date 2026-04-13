@@ -781,10 +781,10 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
     <div
       className="absolute left-1/2 -translate-x-1/2 w-full max-w-[100vw] min-[400px]:max-w-[95vw] sm:max-w-[90vw] md:max-w-[85vw] lg:max-w-[95vw] xl:max-w-[90rem] px-2 sm:px-4 z-10 box-border"
       style={{
-        top: "max(calc(var(--app-nav-height, 4rem) + 1rem), calc(var(--app-nav-height, 4rem) + env(safe-area-inset-top, 0px) + 0.75rem))",
+        top: "max(calc(64px + 1rem), calc(64px + env(safe-area-inset-top, 0px) + 0.75rem))",
         bottom: "max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))",
         maxHeight:
-          "calc(100vh - var(--app-nav-height, 4rem) - max(2rem, env(safe-area-inset-bottom, 0px) + 1rem) - env(safe-area-inset-top, 0px))",
+          "max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))",
       }}
     >
       <Fade in timeout={600}>
@@ -989,8 +989,8 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                     ))}
                   </div>
                 ) : projects.length === 0 ? (
-                  <div className="flex flex-1 min-h-0 flex-col items-center justify-center py-3 sm:py-6 md:py-10 overflow-y-auto overflow-x-hidden pretty-scrollbar pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
-                    <div className="text-center max-w-md px-2 sm:px-4 w-full shrink-0">
+                  <div className="flex flex-1 min-h-0 flex-col items-center justify-center py-3 sm:py-6 md:py-10 overflow-hidden">
+                    <div className="text-center max-w-md px-2 sm:px-4 w-full min-h-0 shrink">
                       <Typography
                         variant="h6"
                         className="font-semibold text-gray-900 mb-2 text-base sm:text-lg md:text-xl"
@@ -1010,28 +1010,27 @@ const ProjectGrid: React.FC<ProjectGridProps> = ({
                         startIcon={<Add />}
                         data-tour="add-project-empty"
                         sx={{
-                          display: "none",
-                          "@media (min-width: 640px)": {
-                            display: "inline-flex",
-                            backgroundColor: "#0b57d0",
-                            color: "#ffffff",
-                            textTransform: "none",
-                            fontSize: "12px",
-                            fontWeight: 500,
-                            padding: "8px 16px",
-                            borderRadius: "24px",
+                          backgroundColor: "#1967D2",
+                          color: "#ffffff",
+                          textTransform: "none",
+                          fontSize: "14px",
+                          fontWeight: 500,
+                          padding: "10px 24px",
+                          width: "100%",
+                          maxWidth: "320px",
+                          mx: "auto",
+                          display: "block",
+                          boxShadow:
+                            "0 1px 3px rgba(25, 103, 210, 0.4), 0 1px 2px rgba(25, 103, 210, 0.3)",
+                          "@media (min-width: 600px)": {
                             width: "auto",
-                            boxShadow:
-                              "0 1px 3px rgba(11, 87, 208, 0.4), 0 1px 2px rgba(11, 87, 208, 0.3)",
+                            maxWidth: "none",
+                            mx: 0,
                           },
                           "&:hover": {
-                            backgroundColor: "#0942a0",
+                            backgroundColor: "#1557B0",
                             boxShadow:
-                              "0 2px 6px rgba(11, 87, 208, 0.4), 0 2px 4px rgba(11, 87, 208, 0.3)",
-                          },
-                          "&:active": {
-                            boxShadow: "0 1px 3px rgba(11, 87, 208, 0.4)",
-                            transform: "translateY(1px)",
+                              "0 2px 6px rgba(25, 103, 210, 0.4), 0 2px 4px rgba(25, 103, 210, 0.3)",
                           },
                           transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                         }}
