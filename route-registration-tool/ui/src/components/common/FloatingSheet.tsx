@@ -37,7 +37,7 @@ const FloatingSheet: React.FC<FloatingSheetProps> = ({
 }) => {
   return (
     <Box
-      className={`fixed left-0 top-16 h-[calc(100vh-4rem)] bg-white flex transition-all duration-300 ${className || ""}`}
+      className={`fixed left-0 top-[var(--app-nav-height,4rem)] h-[calc(100vh-var(--app-nav-height,4rem))] bg-white flex transition-all duration-300 ${className || ""}`}
       style={{
         width: `${width}px`,
         fontFamily: "'Google Sans', 'Roboto', sans-serif",
@@ -74,11 +74,11 @@ const FloatingSheet: React.FC<FloatingSheetProps> = ({
           "&:hover": disabled
             ? {}
             : {
-              backgroundColor: isExpanded ? "#f8f9fa" : "#ffffff",
-              boxShadow: isExpanded
-                ? "0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.1)"
-                : "0 6px 20px rgba(0, 0, 0, 0.25), 0 3px 10px rgba(0, 0, 0, 0.2), 0 0 0 3px rgba(66, 133, 244, 0.15)",
-            },
+                backgroundColor: isExpanded ? "#f8f9fa" : "#ffffff",
+                boxShadow: isExpanded
+                  ? "0 4px 12px rgba(0, 0, 0, 0.15), 0 2px 6px rgba(0, 0, 0, 0.1)"
+                  : "0 6px 20px rgba(0, 0, 0, 0.25), 0 3px 10px rgba(0, 0, 0, 0.2), 0 0 0 3px rgba(66, 133, 244, 0.15)",
+              },
         }}
       >
         {isExpanded ? (

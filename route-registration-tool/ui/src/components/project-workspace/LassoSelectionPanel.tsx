@@ -208,13 +208,13 @@ const LassoSelectionPanel: React.FC = () => {
           }
         })
         .filter(Boolean) as Array<{
-          id: string
-          name: string
-          linestringGeoJson: GeoJSON.LineString
-          origin: [number, number]
-          destination: [number, number]
-          waypoints: [number, number][]
-        }>
+        id: string
+        name: string
+        linestringGeoJson: GeoJSON.LineString
+        origin: [number, number]
+        destination: [number, number]
+        waypoints: [number, number][]
+      }>
 
       if (payloadRoads.length === 0) {
         setStatusError("No valid road geometries available for batch save.")
@@ -228,13 +228,15 @@ const LassoSelectionPanel: React.FC = () => {
       })
 
       setStatusMessage(
-        `Saved ${result.savedCount} route${result.savedCount === 1 ? "" : "s"
+        `Saved ${result.savedCount} route${
+          result.savedCount === 1 ? "" : "s"
         } successfully.`,
       )
 
       if (result.errors.length > 0) {
         setStatusError(
-          `Failed to save ${result.errors.length} road${result.errors.length === 1 ? "" : "s"
+          `Failed to save ${result.errors.length} road${
+            result.errors.length === 1 ? "" : "s"
           }: ${result.errors.map((err) => err.message).join("; ")}`,
         )
       }
@@ -257,7 +259,7 @@ const LassoSelectionPanel: React.FC = () => {
   return (
     <>
       <Box
-        className="fixed left-0 top-16 h-[calc(100vh-4rem)] bg-white flex"
+        className="fixed left-0 top-[var(--app-nav-height,4rem)] h-[calc(100vh-var(--app-nav-height,4rem))] bg-white flex"
         sx={{
           width: "360px",
           fontFamily: "'Google Sans', 'Roboto', sans-serif",
